@@ -1,102 +1,102 @@
 import rclpy
 from rclpy.node import Node
-import numpy  as np
-from cv_bridge import *
-import cv2
-
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist
+from cv_bridge import CvBridge
+import cv2
+import numpy as np
 
-class LineFollowing(Node):
-
+class LineFollowingNode(Node):
     def __init__(self):
         super().__init__('line_following_node')
 
-        self.declare_parameter('linear_scale',0.2)
-        self.declare_parameter('side','red')  # Savoir si on doit prendre le rond point à gauche ('green') ou à droite ('red')
-
-        self.linear_scale = self.get_parameter('linear_scale').get_parameter_value().double_value 
-        self.side = self.get_parameter('side').get_parameter_value().string_value
-
-        # Pour le traitement d'images par OpenCV
+        self.image_subscriber = self.create_subscription(Image, '/image_raw', self.image_callback, 10)
+        self.cmd_vel_publisher = self.create_publisher(Twist, '/cmd_vel', 10)
         self.bridge = CvBridge()
 
-        # Abonné à l'image de la caméra
-        self.subscriber = self.create_subscription(Image, '/image_raw', self.image_callback, 10)
+        self.get_logger().info('Line following node started.')
 
-        # Publie sur le topic qui contrôle le robot
-        self.publisher = self.create_publisher(Twist, '/cmd_vel', 10)
-        self.twist = Twist()
+        # Seuils HSV
+        self.lower_red1 = np.array([0, 100, 100])
+        self.upper_red1 = np.array([10, 255, 255])
+        self.lower_red2 = np.array([170, 100, 100])
+        self.upper_red2 = np.array([180, 255, 255])
+        self.lower_green = np.array([30, 100, 100])
+        self.upper_green = np.array([90, 255, 255])
 
+    def image_callback(self, img_msg):
+        self.get_logger().info('Image received')
+        img = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding='bgr8')
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-    def image_callback(self, msg):
-        # Convertir l'image ROS en image OpenCV
-        cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')        
+        # Masques couleurs
+        mask_red1 = cv2.inRange(hsv, self.lower_red1, self.upper_red1)
+        mask_red2 = cv2.inRange(hsv, self.lower_red2, self.upper_red2)
+        mask_red = cv2.bitwise_or(mask_red1, mask_red2)
+        mask_green = cv2.inRange(hsv, self.lower_green, self.upper_green)
 
-        # Traitement de l'image
-        hsv = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
+        # Morphologie
+        kernel = np.ones((5, 5), np.uint8)
+        mask_red_clean = cv2.morphologyEx(mask_red, cv2.MORPH_OPEN, kernel)
+        mask_red_clean = cv2.morphologyEx(mask_red_clean, cv2.MORPH_CLOSE, kernel)
+        mask_green_clean = cv2.morphologyEx(mask_green, cv2.MORPH_OPEN, kernel)
+        mask_green_clean = cv2.morphologyEx(mask_green_clean, cv2.MORPH_CLOSE, kernel)
 
-        if self.side == 'green':
-            lower_green = np.array([35, 100, 100])
-            upper_green = np.array([85, 255, 255])
-            mask = cv2.inRange(hsv, lower_green, upper_green)
+        # Contours
+        contours_red, _ = cv2.findContours(mask_red_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours_green, _ = cv2.findContours(mask_green_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        elif self.side == 'red':
-            lower_red = np.array([0, 70, 50])
-            upper_red = np.array([10, 255, 255])
-            mask = cv2.inRange(hsv, lower_red, upper_red)
-        
+        if contours_red:
+            contours_red = [max(contours_red, key=cv2.contourArea)]
+            self.get_logger().info('Red contour detected.')
         else:
-            self.get_logger().info(f"'side' : {self.side} doit être 'red' ou 'green'")
-            # Shut everything down
-            self.destroy_node()
-            rclpy.shutdown()
+            self.get_logger().warn('No red contour detected.')
 
-        # Détection des contours
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours_green:
+            contours_green = [max(contours_green, key=cv2.contourArea)]
+            self.get_logger().info('Green contour detected.')
+        else:
+            self.get_logger().warn('No green contour detected.')
 
-        if contours:
-            # Calcul des moments
-            M = cv2.moments(mask)
-            if M["m00"] != 0:
-                cx = int(M["m10"] / M["m00"])
+        cv2.drawContours(img, contours_red, -1, (0, 0, 255), 2)
+        cv2.drawContours(img, contours_green, -1, (0, 255, 0), 2)
 
-                # Logique pour suivre la ligne rouge sur le côté droit
-                self.follow_line(msg.step, cx)
+        if contours_red and contours_green:
+            M_red = cv2.moments(contours_red[0])
+            M_green = cv2.moments(contours_green[0])
 
-        
-    def follow_line(self, taille, cx):
+            if M_red["m00"] != 0 and M_green["m00"] != 0:
+                cx_red = int(M_red["m10"] / M_red["m00"])
+                cx_green = int(M_green["m10"] / M_green["m00"])
+                cx_center = (cx_red + cx_green) // 2
 
-        img_center = taille
+                self.get_logger().info(f'Red cx: {cx_red}, Green cx: {cx_green}, Center: {cx_center}')
 
-        if self.side == 'green':
-            target_position = img_center / 2  # Cible à gauche de l'image
-            error = target_position - cx
+                twist = Twist()
+                twist.linear.x = 0.15
+                twist.angular.z = (cx_center - img.shape[1] // 2) * 0.002
+                self.cmd_vel_publisher.publish(twist)
+                self.get_logger().info(f'Moving: linear={twist.linear.x:.2f}, angular={twist.angular.z:.2f}')
+            else:
+                self.get_logger().warn('Zero division risk in moments. Stopping.')
+                self.stop_robot()
+        else:
+            self.get_logger().warn('Contours missing. Stopping robot.')
+            self.stop_robot()
 
-        elif self.side == 'red':
-            target_position = img_center + (img_center / 2)  # Cible à droite de l'image
-            error = cx - target_position
+        cv2.imshow('Contours', img)
+        cv2.waitKey(1)
 
-        # Contrôle proportionnel simple
-        kp = 0.01
-        self.twist.angular.z = kp * error
-        self.twist.linear.x = 0.2  # Vitesse constante
-
-        self.publisher.publish(self.twist)
-
+    def stop_robot(self):
+        twist = Twist()
+        twist.linear.x = 0.0
+        twist.angular.z = 0.0
+        self.cmd_vel_publisher.publish(twist)
+        self.get_logger().info('Robot stopped.')
 
 def main(args=None):
     rclpy.init(args=args)
-
-    # Init node
-    line_following_node = LineFollowing()
-    rclpy.spin(line_following_node)
-
-    # Pour que les paramètres apparaissent avec la commande ros2 param list
-    thread = threading.Thread(target = rclpy.spin, args = (line_following_node,), daemon=True)
-    thread.start()
-
-
-if __name__ == '__main__':
-    main()
-
+    node = LineFollowingNode()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
