@@ -2,23 +2,25 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist
-from cv_bridge import CvBridge
-import cv2
+from nav_msgs.msg import Path
+from geometry_msgs.msg import PoseStamped
+from cv_bridge import CvBridge # convertit les images de ROS en OpenCV
+import cv2 # utilisé pour le traitement d'image
 import numpy as np
+import time
 
 class LineFollowingNode(Node):
     def __init__(self):
-        super().__init__('line_following_node')
+        super().__init__('line_following_node') # initialisation du noeud avec le nom "line_following_node"
 
-        self.image_subscriber = self.create_subscription(Image, '/image_raw', self.image_callback, 10)
-        self.cmd_vel_publisher = self.create_publisher(Twist, '/cmd_vel', 10)
-
-        # Instanciation pour convertir l'image de la caméra en image OpenCV
+        self.image_subscriber = self.create_subscription(Image, '/image_raw', self.image_callback, 10) # création d'un suscriber qui écoute les images de la camera
+        self.cmd_vel_publisher = self.create_publisher(Twist, '/cmd_vel', 10) # envoie les commandes de déplacement
+        
+        # instanciation pour convertir l'image de la camera en image OpenCV
         self.bridge = CvBridge()
-
         self.get_logger().info('Line following node started.')
 
-        # Seuils HSV (Hue, Saturation, Value)
+        # Seuil HSV (Hue, Saturation, Value) pour détecter les couleurs (plus précisément pour isoler les pixels rouges et verts)
         self.lower_red1 = np.array([0, 100, 100])
         self.upper_red1 = np.array([10, 255, 255])
         self.lower_red2 = np.array([170, 100, 100])
@@ -26,86 +28,110 @@ class LineFollowingNode(Node):
         self.lower_green = np.array([30, 100, 100])
         self.upper_green = np.array([90, 255, 255])
 
+        # définition des paramètres pour calculer le centre de la trajectoire avec un PID
+        self.previous_error = 0.0 # Variable pour garder une trace de l'erreur dans le controle PID
+        # utilisé pour ajuster la direction du robot
+        self.last_known_center = 320 # dernière position centrale connue du robot
+
+        # Tableau pour enregistrer les positions latérales (simulant une trace GPS)
+        self.gps_trace = []
+
+    # Fonction qui est appelée à chaque fois qu'une nouvelle image est reçue
     def image_callback(self, img_msg):
-        self.get_logger().info('Image received')
-
-        # Conversion de l'image en OpenCV
+        # conversion de l'image en OpenCV
         img = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding='bgr8')
+        
+        height, width, _ = img.shape
 
-        # Conversion de RGB en HSV
-        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        # définition de la "region of interest" du champ de vision de la camera 
+        # Pour éviter d'etre parasité par les autres obstacles qui sont formés de lignes rouges
+        roi = img[height // 4:, :] # On ignore le quart supérieur
 
-        # Binarisation de l'image
+        # Conversion de RGB en HSV (meilleurs pour la détection des couleurs)
+        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+
+        # Binarisation de l'image pour isoler les pixels rouges et verts
         mask_red1 = cv2.inRange(hsv, self.lower_red1, self.upper_red1)
         mask_red2 = cv2.inRange(hsv, self.lower_red2, self.upper_red2)
         mask_red = cv2.bitwise_or(mask_red1, mask_red2)
         mask_green = cv2.inRange(hsv, self.lower_green, self.upper_green)
-
-        # Morphologie (filtrage pour enlever le bruit des masques)
+        
+        # Morphologie (filtrage pour enlever le bruit des filtres)
         kernel = np.ones((5, 5), np.uint8)
         mask_red_clean = cv2.morphologyEx(mask_red, cv2.MORPH_OPEN, kernel)
         mask_red_clean = cv2.morphologyEx(mask_red_clean, cv2.MORPH_CLOSE, kernel)
         mask_green_clean = cv2.morphologyEx(mask_green, cv2.MORPH_OPEN, kernel)
         mask_green_clean = cv2.morphologyEx(mask_green_clean, cv2.MORPH_CLOSE, kernel)
 
-        # Contours
+        # Contours des limites droite et gauche du chemin à suivre
         contours_red, _ = cv2.findContours(mask_red_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contours_green, _ = cv2.findContours(mask_green_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         # On ne garde que la plus grande aire formée par les contours (= correspond à la ligne)
         if contours_red:
             contours_red = [max(contours_red, key=cv2.contourArea)]
-            self.get_logger().info('Red contour detected.')
-        else:
-            self.get_logger().warn('No red contour detected.')
-
         if contours_green:
             contours_green = [max(contours_green, key=cv2.contourArea)]
-            self.get_logger().info('Green contour detected.')
-        else:
-            self.get_logger().warn('No green contour detected.')
 
-        cv2.drawContours(img, contours_red, -1, (0, 0, 255), 2)
-        cv2.drawContours(img, contours_green, -1, (0, 255, 0), 2)
-
+        # Calcul de la trajectoire
+        # Si les 2 lignes sont détectées
         if contours_red and contours_green:
             M_red = cv2.moments(contours_red[0])
             M_green = cv2.moments(contours_green[0])
 
+            # Si des contours sont trouvés, on calcul les moments des contours 
+            # pour obtenir leur centre de gravité
             if M_red["m00"] != 0 and M_green["m00"] != 0:
+                #calcul des coordonnées centrales des lignes rouge et verte, puis calcul du centre du chemin
                 cx_red = int(M_red["m10"] / M_red["m00"])
                 cx_green = int(M_green["m10"] / M_green["m00"])
                 cx_center = (cx_red + cx_green) // 2
+                self.last_known_center = cx_center
+
+                error = cx_center - width // 2 #calcul de l'erreur : différence entre le centre du chemin et le centre de l'image 
+                # cette erreur est utilisée pour corriger la direction du robot
+                error_corrected = error + 10  # pour compenser la tendance à gauche
+
+                #Application d'un PID simplifié (Proportionnel + dérivé) pour ajuster la direction du robot
+                k_p = 0.005
+                k_d = 0.01
+                derivative = error_corrected - self.previous_error
+                self.previous_error = error_corrected
                 
-                cy_red = int(M_red["m01"] / M_red["m00"])
-                cy_green = int(M_green["m01"] / M_green["m00"])
-
-                self.get_logger().info(f'Red cx: {cx_red}, Green cx: {cx_green}, Center: {cx_center}')
-
-                # Si le centre de la ligne n’est pas au centre de l’image, on tourne.
+                # Commandes de mouvement: le robot avance avec une vitesse linéaire et tourne selon l'erreur calculée (PID)
                 twist = Twist()
-                twist.linear.x = 0.15
-                twist.angular.z = (cx_center - img.shape[1] // 2) * 0.002
-                self.cmd_vel_publisher.publish(twist)
-                self.get_logger().info(f'Moving: linear={twist.linear.x:.2f}, angular={twist.angular.z:.2f}')
-            else:
-                self.get_logger().warn('Zero division risk in moments. Stopping.')
-                self.stop_robot()
-        else:
-            self.get_logger().warn('Contours missing. Stopping robot.')
-            self.stop_robot()
+                twist.linear.x = 0.08  # réduction de vitesse en ligne droite
+                twist.angular.z = -k_p * error_corrected - k_d * derivative
 
-        cv2.imshow('Mask Red', mask_red_clean)
-        cv2.imshow('Mask Green', mask_green_clean)
-        cv2.imshow('Contours', img)
+                self.cmd_vel_publisher.publish(twist)
+                self.save_position(cx_center)
+
+        else:
+            # Si on perd les 2 lignes, tourner pour les retrouver
+            twist = Twist()
+            twist.linear.x = 0.0
+            twist.angular.z = 0.3  # tourne sur place
+            self.cmd_vel_publisher.publish(twist)
+
+        # Optionnel : affichage debug
+        cv2.imshow('ROI', roi)
+        cv2.imshow('Red Mask', mask_red_clean)
+        cv2.imshow('Green Mask', mask_green_clean)
         cv2.waitKey(1)
 
+    # Fonction pour enregistrer la position latérale simulant une trace GPS
+    def save_position(self, center_x):
+        """Simule l’enregistrement GPS (ici uniquement une coordonnée latérale)."""
+        self.gps_trace.append(center_x)
+        if len(self.gps_trace) > 1000:
+            self.gps_trace.pop(0)
+
+    # Fonction pour arreter le robot
     def stop_robot(self):
         twist = Twist()
         twist.linear.x = 0.0
         twist.angular.z = 0.0
         self.cmd_vel_publisher.publish(twist)
-        self.get_logger().info('Robot stopped.')
 
 def main(args=None):
     rclpy.init(args=args)
