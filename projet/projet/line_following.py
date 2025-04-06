@@ -12,11 +12,13 @@ class LineFollowingNode(Node):
 
         self.image_subscriber = self.create_subscription(Image, '/image_raw', self.image_callback, 10)
         self.cmd_vel_publisher = self.create_publisher(Twist, '/cmd_vel', 10)
+
+        # Instanciation pour convertir l'image de la caméra en image OpenCV
         self.bridge = CvBridge()
 
         self.get_logger().info('Line following node started.')
 
-        # Seuils HSV
+        # Seuils HSV (Hue, Saturation, Value)
         self.lower_red1 = np.array([0, 100, 100])
         self.upper_red1 = np.array([10, 255, 255])
         self.lower_red2 = np.array([170, 100, 100])
@@ -26,16 +28,20 @@ class LineFollowingNode(Node):
 
     def image_callback(self, img_msg):
         self.get_logger().info('Image received')
+
+        # Conversion de l'image en OpenCV
         img = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding='bgr8')
+
+        # Conversion de RGB en HSV
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-        # Masques couleurs
+        # Binarisation de l'image
         mask_red1 = cv2.inRange(hsv, self.lower_red1, self.upper_red1)
         mask_red2 = cv2.inRange(hsv, self.lower_red2, self.upper_red2)
         mask_red = cv2.bitwise_or(mask_red1, mask_red2)
         mask_green = cv2.inRange(hsv, self.lower_green, self.upper_green)
 
-        # Morphologie
+        # Morphologie (filtrage pour enlever le bruit des masques)
         kernel = np.ones((5, 5), np.uint8)
         mask_red_clean = cv2.morphologyEx(mask_red, cv2.MORPH_OPEN, kernel)
         mask_red_clean = cv2.morphologyEx(mask_red_clean, cv2.MORPH_CLOSE, kernel)
@@ -46,6 +52,7 @@ class LineFollowingNode(Node):
         contours_red, _ = cv2.findContours(mask_red_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contours_green, _ = cv2.findContours(mask_green_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
+        # On ne garde que la plus grande aire formée par les contours (= correspond à la ligne)
         if contours_red:
             contours_red = [max(contours_red, key=cv2.contourArea)]
             self.get_logger().info('Red contour detected.')
@@ -69,9 +76,13 @@ class LineFollowingNode(Node):
                 cx_red = int(M_red["m10"] / M_red["m00"])
                 cx_green = int(M_green["m10"] / M_green["m00"])
                 cx_center = (cx_red + cx_green) // 2
+                
+                cy_red = int(M_red["m01"] / M_red["m00"])
+                cy_green = int(M_green["m01"] / M_green["m00"])
 
                 self.get_logger().info(f'Red cx: {cx_red}, Green cx: {cx_green}, Center: {cx_center}')
 
+                # Si le centre de la ligne n’est pas au centre de l’image, on tourne.
                 twist = Twist()
                 twist.linear.x = 0.15
                 twist.angular.z = (cx_center - img.shape[1] // 2) * 0.002
@@ -84,6 +95,8 @@ class LineFollowingNode(Node):
             self.get_logger().warn('Contours missing. Stopping robot.')
             self.stop_robot()
 
+        cv2.imshow('Mask Red', mask_red_clean)
+        cv2.imshow('Mask Green', mask_green_clean)
         cv2.imshow('Contours', img)
         cv2.waitKey(1)
 

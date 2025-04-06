@@ -16,8 +16,6 @@ def generate_launch_description():
         ))
     )
 
-    #Rajouter noeuds
-
     ld = LaunchDescription()
 
     # Ajout des actions au lancement
