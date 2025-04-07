@@ -24,6 +24,7 @@ setup(
     entry_points={
         'console_scripts': [
             'line_following = projet.line_following:main',
+            'teleop = projet.mybot_teleop:main',
         ],
     },
 )

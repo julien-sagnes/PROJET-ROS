@@ -1,0 +1,73 @@
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import Float32MultiArray
+from geometry_msgs.msg import Twist
+import time
+
+class AutomaticStop(Node):
+    def __init__(self):
+        super().__init__('automatic_stop_node')
+
+        # Déclare et récupère le paramètre 'distance_limit'
+        self.declare_parameter('distance_limit', 0.5)
+        self.declare_parameter('linear_scale',1.0)
+        self.declare_parameter('launch', False)
+
+        self.distance_limit = self.get_parameter('distance_limit').get_parameter_value().double_value
+        self.linear_scale = self.get_parameter('linear_scale').get_parameter_value().double_value
+        self.launch = self.get_parameter('launch').get_parameter_value().bool_value
+
+        # Crée un abonné au sujet 'lds_distances'
+        self.subscriber = self.create_subscription(
+            Float32MultiArray,
+            'lds_distances',
+            self.lds_callback,
+            10
+        )
+
+        # Crée un éditeur pour le sujet '/cmd_vel'
+        self.publisher = self.create_publisher(Twist, '/cmd_vel', 10)
+
+        self.get_logger().info("Arrêt automatique activé...")
+
+    def lds_callback(self, msg):
+        correction_needed = False  # Initialise correction_needed à False
+
+        # Vérifie les distances et ajuste la correction si nécessaire
+        if msg.data[0] < self.distance_limit:
+            correction_needed = True
+            stop_msg = Twist()
+            stop_msg.linear.x = -self.linear_scale
+            stop_msg.angular.z = 0.0
+            self.publisher.publish(stop_msg)
+            self.get_logger().info("Obstacle détecté à l'avant ! Remise en place.")
+        elif msg.data[3] < self.distance_limit:
+            correction_needed = True
+            stop_msg = Twist()
+            stop_msg.linear.x = self.linear_scale
+            stop_msg.angular.z = 0.0
+            self.publisher.publish(stop_msg)
+            self.get_logger().info("Obstacle détecté à l'arrière ! Remise en place.")
+        
+
+        # Si une correction est nécessaire, arrête  le robot après la correction
+        if correction_needed:
+            time.sleep(1)   #correction de 1 seconde
+            stop_msg = Twist()
+            stop_msg.linear.x = 0.0
+            stop_msg.angular.z = 0.0
+            self.get_logger().info("Correction...")
+            self.publisher.publish(stop_msg)
+        else:
+            if not self.launch:
+                self.get_logger().info("Arrêt automatique activé...")
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = AutomaticStop()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()

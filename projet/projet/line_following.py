@@ -18,6 +18,7 @@ class LineFollowingNode(Node):
         
         # instanciation pour convertir l'image de la camera en image OpenCV
         self.bridge = CvBridge()
+
         self.get_logger().info('Line following node started.')
 
         # Seuil HSV (Hue, Saturation, Value) pour détecter les couleurs (plus précisément pour isoler les pixels rouges et verts)
@@ -36,6 +37,9 @@ class LineFollowingNode(Node):
         # Tableau pour enregistrer les positions latérales (simulant une trace GPS)
         self.gps_trace = []
 
+        # Pour assurer les virages
+        self.correction = False
+
     # Fonction qui est appelée à chaque fois qu'une nouvelle image est reçue
     def image_callback(self, img_msg):
         # conversion de l'image en OpenCV
@@ -43,7 +47,7 @@ class LineFollowingNode(Node):
         
         height, width, _ = img.shape
 
-        # définition de la "region of interest" du champ de vision de la camera 
+        # définition de la "region of interest" du champ de vision de la camera
         # Pour éviter d'etre parasité par les autres obstacles qui sont formés de lignes rouges
         roi = img[height // 4:, :] # On ignore le quart supérieur
 
@@ -76,15 +80,17 @@ class LineFollowingNode(Node):
         # Calcul de la trajectoire
         # Si les 2 lignes sont détectées
         if contours_red and contours_green:
+            # Si des contours sont trouvés, on calcul les moments des contours
             M_red = cv2.moments(contours_red[0])
             M_green = cv2.moments(contours_green[0])
-
-            # Si des contours sont trouvés, on calcul les moments des contours 
             # pour obtenir leur centre de gravité
             if M_red["m00"] != 0 and M_green["m00"] != 0:
                 #calcul des coordonnées centrales des lignes rouge et verte, puis calcul du centre du chemin
                 cx_red = int(M_red["m10"] / M_red["m00"])
+                cy_red = int(M_red["m01"] / M_red["m00"])
                 cx_green = int(M_green["m10"] / M_green["m00"])
+                cy_green = int(M_green["m01"] / M_green["m00"])
+
                 cx_center = (cx_red + cx_green) // 2
                 self.last_known_center = cx_center
 
@@ -100,11 +106,49 @@ class LineFollowingNode(Node):
                 
                 # Commandes de mouvement: le robot avance avec une vitesse linéaire et tourne selon l'erreur calculée (PID)
                 twist = Twist()
-                twist.linear.x = 0.08  # réduction de vitesse en ligne droite
-                twist.angular.z = -k_p * error_corrected - k_d * derivative
+
+                self.get_logger().info(f'1. cx_green = {cx_green}, cy_green = {cy_green}')
+                self.get_logger().info(f'1. cx_red = {cx_red}, cy_red = {cy_red}')
+
+                twist.linear.x = 0.1  # vitesse en ligne droite
+                if (cx_green > 20 and cy_green > 20) and (cx_red > 20 and cy_red > 20):
+                    twist.angular.z = -k_p * error_corrected - k_d * derivative
+                    self.get_logger().info(f'Ligne droite...')
+                else:
+                    self.get_logger().info(f'Virage serré !')
 
                 self.cmd_vel_publisher.publish(twist)
                 self.save_position(cx_center)
+
+        elif contours_green and not contours_red:
+            # Ligne verte seulement -> tourne vers la droite
+            self.get_logger().info(f'Virage serré !')
+            M_green = cv2.moments(contours_green[0])
+            cx_green = int(M_green["m10"] / M_green["m00"])
+            cy_green = int(M_green["m01"] / M_green["m00"])
+            self.get_logger().info(f'2. cx_green = {cx_green}, cy_green = {cy_green}')
+            if M_green["m00"] != 0:
+                if cx_green < 380:
+                    self.get_logger().info(f'Tourne vers la droite')
+                    twist = Twist()
+                    twist.angular.x = 0.1
+                    twist.angular.z = -0.3
+                    self.cmd_vel_publisher.publish(twist)
+
+        elif contours_red and not contours_green:
+            # Ligne rouge seulement -> tourne vers la gauche
+            self.get_logger().info(f'Virage serré !')
+            M_red = cv2.moments(contours_red[0])
+            cx_red = int(M_red["m10"] / M_red["m00"])
+            cy_red = int(M_red["m01"] / M_red["m00"])
+            self.get_logger().info(f'2. cx_red = {cx_red}, cy_red = {cy_red}')
+            if M_red["m00"] != 0:
+                if cx_red < 380:
+                    self.get_logger().info(f'Tourne vers la gauche')
+                    twist = Twist()
+                    twist.angular.x = 0.1
+                    twist.angular.z = 0.3
+                    self.cmd_vel_publisher.publish(twist)
 
         else:
             # Si on perd les 2 lignes, tourner pour les retrouver
