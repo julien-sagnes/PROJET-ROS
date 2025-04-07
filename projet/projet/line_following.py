@@ -49,7 +49,7 @@ class LineFollowingNode(Node):
 
         # définition de la "region of interest" du champ de vision de la camera
         # Pour éviter d'etre parasité par les autres obstacles qui sont formés de lignes rouges
-        roi = img[height // 4:, :] # On ignore le quart supérieur
+        roi = img[height // 2:, :] # On ignore le huitième inférieur
 
         # Conversion de RGB en HSV (meilleurs pour la détection des couleurs)
         hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
@@ -96,11 +96,11 @@ class LineFollowingNode(Node):
 
                 error = cx_center - width // 2 #calcul de l'erreur : différence entre le centre du chemin et le centre de l'image 
                 # cette erreur est utilisée pour corriger la direction du robot
-                error_corrected = error + 10  # pour compenser la tendance à gauche
+                error_corrected = error  # pour compenser la tendance à gauche
 
                 #Application d'un PID simplifié (Proportionnel + dérivé) pour ajuster la direction du robot
                 k_p = 0.005
-                k_d = 0.01
+                k_d = 0.005
                 derivative = error_corrected - self.previous_error
                 self.previous_error = error_corrected
                 
@@ -111,7 +111,7 @@ class LineFollowingNode(Node):
                 self.get_logger().info(f'1. cx_red = {cx_red}, cy_red = {cy_red}')
 
                 twist.linear.x = 0.1  # vitesse en ligne droite
-                if (cx_green > 20 and cy_green > 20) and (cx_red > 20 and cy_red > 20):
+                if (cx_green > 10 and cy_green > 10) and (cx_red > 10 and cy_red > 10):
                     twist.angular.z = -k_p * error_corrected - k_d * derivative
                     self.get_logger().info(f'Ligne droite...')
                 else:
@@ -128,10 +128,10 @@ class LineFollowingNode(Node):
             cy_green = int(M_green["m01"] / M_green["m00"])
             self.get_logger().info(f'2. cx_green = {cx_green}, cy_green = {cy_green}')
             if M_green["m00"] != 0:
-                if cx_green < 380:
+                if cx_green < 150:  # Quand trop près de la ligne
                     self.get_logger().info(f'Tourne vers la droite')
                     twist = Twist()
-                    twist.angular.x = 0.1
+                    twist.linear.x = 0.01
                     twist.angular.z = -0.3
                     self.cmd_vel_publisher.publish(twist)
 
@@ -143,10 +143,10 @@ class LineFollowingNode(Node):
             cy_red = int(M_red["m01"] / M_red["m00"])
             self.get_logger().info(f'2. cx_red = {cx_red}, cy_red = {cy_red}')
             if M_red["m00"] != 0:
-                if cx_red < 380:
+                if cx_red < 400:    # Quand trop près de la ligne
                     self.get_logger().info(f'Tourne vers la gauche')
                     twist = Twist()
-                    twist.angular.x = 0.1
+                    twist.linear.x = 0.01
                     twist.angular.z = 0.3
                     self.cmd_vel_publisher.publish(twist)
 
