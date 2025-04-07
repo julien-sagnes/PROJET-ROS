@@ -99,7 +99,7 @@ class LineFollowingNode(Node):
                 error_corrected = error  # pour compenser la tendance à gauche
 
                 #Application d'un PID simplifié (Proportionnel + dérivé) pour ajuster la direction du robot
-                k_p = 0.005
+                k_p = 0.00
                 k_d = 0.005
                 derivative = error_corrected - self.previous_error
                 self.previous_error = error_corrected
@@ -117,6 +117,9 @@ class LineFollowingNode(Node):
                 else:
                     self.get_logger().info(f'Virage serré !')
 
+                cv2.circle(roi, (cx_green, cy_green), 5, (0, 255, 0), -1)  # cercle vert
+                cv2.circle(roi, (cx_red, cy_red), 5, (0, 0, 255), -1)  # cercle rouge
+
                 self.cmd_vel_publisher.publish(twist)
                 self.save_position(cx_center)
 
@@ -126,9 +129,10 @@ class LineFollowingNode(Node):
             M_green = cv2.moments(contours_green[0])
             cx_green = int(M_green["m10"] / M_green["m00"])
             cy_green = int(M_green["m01"] / M_green["m00"])
+            cv2.circle(roi, (cx_green, cy_green), 5, (0, 255, 0), -1)  # cercle vert
             self.get_logger().info(f'2. cx_green = {cx_green}, cy_green = {cy_green}')
             if M_green["m00"] != 0:
-                if cx_green < 150:  # Quand trop près de la ligne
+                if cy_green > 75:  # Quand trop près de la ligne
                     self.get_logger().info(f'Tourne vers la droite')
                     twist = Twist()
                     twist.linear.x = 0.01
@@ -141,9 +145,10 @@ class LineFollowingNode(Node):
             M_red = cv2.moments(contours_red[0])
             cx_red = int(M_red["m10"] / M_red["m00"])
             cy_red = int(M_red["m01"] / M_red["m00"])
+            cv2.circle(roi, (cx_red, cy_red), 5, (0, 0, 255), -1)  # cercle rouge
             self.get_logger().info(f'2. cx_red = {cx_red}, cy_red = {cy_red}')
             if M_red["m00"] != 0:
-                if cx_red < 400:    # Quand trop près de la ligne
+                if cy_red > 85:    # Quand trop près de la ligne
                     self.get_logger().info(f'Tourne vers la gauche')
                     twist = Twist()
                     twist.linear.x = 0.01
