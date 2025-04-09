@@ -5,7 +5,7 @@ from geometry_msgs.msg import PoseStamped
 from cv_bridge import CvBridge # convertit les images de ROS en OpenCV
 import cv2 # utilisé pour le traitement d'image
 import numpy as np
-
+import click
 from sensor_msgs.msg import CompressedImage
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist
@@ -32,12 +32,14 @@ class LineFollowingNode(Node):
         self.get_logger().info('Line following node started.')
 
         # Seuil HSV (Hue, Saturation, Value) pour détecter les couleurs (plus précisément pour isoler les pixels rouges et verts)
-        self.lower_red1 = np.array([0, 100, 100])
+        self.lower_red1 = np.array([0, 70, 50])
         self.upper_red1 = np.array([10, 255, 255])
-        self.lower_red2 = np.array([160, 100, 100])
-        self.upper_red2 = np.array([179, 255, 255])
-        self.lower_green = np.array([40, 100, 100])
-        self.upper_green = np.array([80, 255, 255])
+        self.lower_red2 = np.array([160, 70, 50])
+        self.upper_red2 = np.array([180, 255, 255])
+
+        # Vert plus large
+        self.lower_green = np.array([30, 40, 40])
+        self.upper_green = np.array([90, 255, 255])
 
         # définition des paramètres pour calculer le centre de la trajectoire avec un PID
         self.previous_error = 0.0 # Variable pour garder une trace de l'erreur dans le controle PID
@@ -46,6 +48,9 @@ class LineFollowingNode(Node):
 
     # Fonction qui est appelée à chaque fois qu'une nouvelle image est reçue
     def image_callback(self, img_msg):
+
+
+        self.get_logger().info('Entrée dans le Callback')
         # conversion de l'image en OpenCV
         if self.interface == '/image_raw':
             img = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding='bgr8')
@@ -68,6 +73,9 @@ class LineFollowingNode(Node):
         mask_red2 = cv2.inRange(hsv, self.lower_red2, self.upper_red2)
         mask_red = cv2.bitwise_or(mask_red1, mask_red2)
         mask_green = cv2.inRange(hsv, self.lower_green, self.upper_green)
+        
+        cv2.imshow('Red Mask (raw)', mask_red)
+        cv2.imshow('Green Mask (raw)', mask_green)
         
         # Morphologie (filtrage pour enlever le bruit des filtres)
         kernel = np.ones((5, 5), np.uint8)
