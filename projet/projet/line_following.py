@@ -6,6 +6,8 @@ from cv_bridge import CvBridge # convertit les images de ROS en OpenCV
 import cv2 # utilisé pour le traitement d'image
 import numpy as np
 import click
+import threading
+
 from sensor_msgs.msg import CompressedImage
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist
@@ -14,9 +16,13 @@ class LineFollowingNode(Node):
     def __init__(self):
         super().__init__('line_following_node') # initialisation du noeud avec le nom "line_following_node"
 
+        # Choix de la vitesse global
+        self.declare_parameter('linear_scale',0.1)
+        self.linear_scale = self.get_parameter('linear_scale').get_parameter_value().double_value
         # Choix du côté du rond-point
         self.declare_parameter('side','left')
         self.side = self.get_parameter('side').get_parameter_value().string_value
+        # Choix entre simulation et réel
         self.declare_parameter('interface','/image_raw') #RAJOUTER /camera/image_raw/compressed si on veut interfacer
         self.interface = self.get_parameter('interface').get_parameter_value().string_value
 
@@ -48,9 +54,6 @@ class LineFollowingNode(Node):
 
     # Fonction qui est appelée à chaque fois qu'une nouvelle image est reçue
     def image_callback(self, img_msg):
-
-
-        self.get_logger().info('Entrée dans le Callback')
         # conversion de l'image en OpenCV
         if self.interface == '/image_raw':
             img = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding='bgr8')
@@ -63,7 +66,7 @@ class LineFollowingNode(Node):
 
         # définition de la "region of interest" du champ de vision de la camera
         # Pour éviter d'etre parasité par les autres obstacles qui sont formés de lignes rouges
-        roi = img[height // 3:, :] # On ignore le huitième inférieur
+        roi = img[height // 2:, :] # On ignore le quart inférieur
 
         # Conversion de RGB en HSV (meilleurs pour la détection des couleurs)
         hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
@@ -73,9 +76,6 @@ class LineFollowingNode(Node):
         mask_red2 = cv2.inRange(hsv, self.lower_red2, self.upper_red2)
         mask_red = cv2.bitwise_or(mask_red1, mask_red2)
         mask_green = cv2.inRange(hsv, self.lower_green, self.upper_green)
-        
-        cv2.imshow('Red Mask (raw)', mask_red)
-        cv2.imshow('Green Mask (raw)', mask_green)
         
         # Morphologie (filtrage pour enlever le bruit des filtres)
         kernel = np.ones((5, 5), np.uint8)
@@ -108,6 +108,60 @@ class LineFollowingNode(Node):
                 cx_green = int(M_green["m10"] / M_green["m00"])
                 cy_green = int(M_green["m01"] / M_green["m00"])
 
+                self.get_logger().info(f'1. cx_green = {cx_green}, cy_green = {cy_green}')
+                self.get_logger().info(f'1. cx_red = {cx_red}, cy_red = {cy_red}')
+                cv2.circle(roi, (cx_green, cy_green), 5, (0, 255, 0), -1)  # cercle vert
+                cv2.circle(roi, (cx_red, cy_red), 5, (0, 0, 255), -1)  # cercle rouge
+
+                """
+                Pour gérer le rond point :
+                if cx_green < cx_red and cy_red > 200:  # Si on est proche de la rouge
+                    cx_center = (cx_red - 10 + cx_green) // 2   # On va un peu plus vers la gauche
+                    self.last_known_center = cx_center
+
+                    error = cx_center - width // 2 #calcul de l'erreur : différence entre le centre du chemin et le centre de l'image 
+                    # cette erreur est utilisée pour corriger la direction du robot
+                    error_corrected = error  # pour compenser la tendance à gauche
+
+                    #Application d'un PID simplifié (Proportionnel + dérivé) pour ajuster la direction du robot
+                    k_p = 0.01
+                    k_d = 0.01
+                    derivative = error_corrected - self.previous_error
+                    self.previous_error = error_corrected
+                    
+                    # Commandes de mouvement: le robot avance avec une vitesse linéaire et tourne selon l'erreur calculée (PID)
+                    twist = Twist()
+                    twist.linear.x = self.linear_scale
+                    twist.angular.z = -k_p * error_corrected - k_d * derivative
+
+                    self.get_logger().info(f'Virage !')
+
+                    self.cmd_vel_publisher.publish(twist)
+
+                elif cx_green < cx_red and cy_green > 200:  # Si on est proche de la verte
+                    cx_center = (cx_red + 10 + cx_green) // 2   # On va un peu plus vers la droite
+                    self.last_known_center = cx_center
+
+                    error = cx_center - width // 2 #calcul de l'erreur : différence entre le centre du chemin et le centre de l'image 
+                    # cette erreur est utilisée pour corriger la direction du robot
+                    error_corrected = error  # pour compenser la tendance à gauche
+
+                    #Application d'un PID simplifié (Proportionnel + dérivé) pour ajuster la direction du robot
+                    k_p = 0.01
+                    k_d = 0.01
+                    derivative = error_corrected - self.previous_error
+                    self.previous_error = error_corrected
+                    
+                    # Commandes de mouvement: le robot avance avec une vitesse linéaire et tourne selon l'erreur calculée (PID)
+                    twist = Twist()
+                    twist.linear.x = self.linear_scale
+                    twist.angular.z = -k_p * error_corrected - k_d * derivative
+
+                    self.get_logger().info(f'Virage !')
+
+                    self.cmd_vel_publisher.publish(twist)
+                """
+
                 if cx_green < cx_red:
                     cx_center = (cx_red + cx_green) // 2
                     self.last_known_center = cx_center
@@ -117,42 +171,36 @@ class LineFollowingNode(Node):
                     error_corrected = error  # pour compenser la tendance à gauche
 
                     #Application d'un PID simplifié (Proportionnel + dérivé) pour ajuster la direction du robot
-                    k_p = 0.005
-                    k_d = 0.005
+                    k_p = 0.01
+                    k_d = 0.01
                     derivative = error_corrected - self.previous_error
                     self.previous_error = error_corrected
                     
                     # Commandes de mouvement: le robot avance avec une vitesse linéaire et tourne selon l'erreur calculée (PID)
                     twist = Twist()
 
-                    self.get_logger().info(f'1. cx_green = {cx_green}, cy_green = {cy_green}')
-                    self.get_logger().info(f'1. cx_red = {cx_red}, cy_red = {cy_red}')
-
-                    twist.linear.x = 0.1  # vitesse en ligne droite
-                    if (cx_green > 10 and cy_green > 10) and (cx_red > 10 and cy_red > 10):
+                    twist.linear.x = self.linear_scale  # vitesse en ligne droite
+                    if (cx_green > 30 and cy_green > 30) and (cx_red > 30 and cy_red > 30):
                         twist.angular.z = -k_p * error_corrected - k_d * derivative
                         self.get_logger().info(f'Ligne droite...')
                     else:
                         self.get_logger().info(f'Virage serré !')
 
-                    cv2.circle(roi, (cx_green, cy_green), 5, (0, 255, 0), -1)  # cercle vert
-                    cv2.circle(roi, (cx_red, cy_red), 5, (0, 0, 255), -1)  # cercle rouge
-
                     self.cmd_vel_publisher.publish(twist)
 
                 else:
-                    if cy_green > 90:
+                    if cy_green > 90:   #Si on se rapproche du rond-point
                         if self.side == 'left':
                             self.get_logger().info(f'Tourne à gauche au rond point')
                             twist = Twist()
                             twist.linear.x = 0.01
-                            twist.angular.z = 0.3
+                            twist.angular.z = 0.5
                             self.cmd_vel_publisher.publish(twist)
                         elif self.side == 'right':
                             self.get_logger().info(f'Tourne à droite au rond point')
                             twist = Twist()
                             twist.linear.x = 0.01
-                            twist.angular.z = -0.3
+                            twist.angular.z = -0.5
                             self.cmd_vel_publisher.publish(twist)
                         else : 
                             raise ValueError("Doit être un des côtés 'left' or 'right' !")
@@ -169,8 +217,8 @@ class LineFollowingNode(Node):
                 if cy_green > 70:  # Quand trop près de la ligne
                     self.get_logger().info(f'Tourne vers la droite')
                     twist = Twist()
-                    twist.linear.x = 0.01
-                    twist.angular.z = -0.3
+                    twist.linear.x = 0.05
+                    twist.angular.z = -0.5
                     self.cmd_vel_publisher.publish(twist)
 
         elif contours_red and not contours_green:
@@ -185,8 +233,8 @@ class LineFollowingNode(Node):
                 if cy_red > 90:    # Quand trop près de la ligne
                     self.get_logger().info(f'Tourne vers la gauche')
                     twist = Twist()
-                    twist.linear.x = 0.01
-                    twist.angular.z = 0.3
+                    twist.linear.x = 0.05
+                    twist.angular.z = 0.5
                     self.cmd_vel_publisher.publish(twist)
 
         else:
@@ -198,16 +246,11 @@ class LineFollowingNode(Node):
 
         # Optionnel : affichage debug
         cv2.imshow('ROI', roi)
-        cv2.imshow('Red Mask', mask_red_clean)
-        cv2.imshow('Green Mask', mask_green_clean)
+        #cv2.imshow('Red Mask', mask_red_clean)
+        #cv2.imshow('Green Mask', mask_green_clean)
+        cv2.imshow('Red Mask (raw)', mask_red)
+        cv2.imshow('Green Mask (raw)', mask_green)
         cv2.waitKey(1)
-
-    # Fonction pour enregistrer la position latérale simulant une trace GPS
-    def save_position(self, center_x):
-        """Simule l’enregistrement GPS (ici uniquement une coordonnée latérale)."""
-        self.gps_trace.append(center_x)
-        if len(self.gps_trace) > 1000:
-            self.gps_trace.pop(0)
 
     # Fonction pour arreter le robot
     def stop_robot(self):

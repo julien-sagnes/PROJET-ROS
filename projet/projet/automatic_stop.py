@@ -37,27 +37,11 @@ class AutomaticStop(Node):
         if msg.data[0] < self.distance_limit:
             correction_needed = True
             stop_msg = Twist()
-            stop_msg.linear.x = -self.linear_scale
-            stop_msg.angular.z = 0.0
-            self.publisher.publish(stop_msg)
-            self.get_logger().info("Obstacle détecté à l'avant ! Remise en place.")
-        elif msg.data[3] < self.distance_limit:
-            correction_needed = True
-            stop_msg = Twist()
-            stop_msg.linear.x = self.linear_scale
-            stop_msg.angular.z = 0.0
-            self.publisher.publish(stop_msg)
-            self.get_logger().info("Obstacle détecté à l'arrière ! Remise en place.")
-        
-
-        # Si une correction est nécessaire, arrête  le robot après la correction
-        if correction_needed:
-            time.sleep(1)   #correction de 1 seconde
-            stop_msg = Twist()
             stop_msg.linear.x = 0.0
             stop_msg.angular.z = 0.0
-            self.get_logger().info("Correction...")
             self.publisher.publish(stop_msg)
+            self.get_logger().info("Obstacle détecté à l'avant ! Arrêt.")
+
         else:
             if not self.launch:
                 self.get_logger().info("Arrêt automatique activé...")
