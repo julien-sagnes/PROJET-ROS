@@ -25,6 +25,8 @@ setup(
         'console_scripts': [
             'line_following = projet.line_following:main',
             'teleop = projet.mybot_teleop:main',
+            'automatic_stop = projet.automatic_stop:main',
+            'lds_distance = projet.lds_distance:main',
         ],
     },
 )

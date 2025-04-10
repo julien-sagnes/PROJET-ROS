@@ -1,10 +1,10 @@
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch.actions import IncludeLaunchDescription, LogInfo
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
-import launch  # Importation nécessaire pour utiliser launch.actions.Shutdown()
+import launch  # Pour Shutdown()
 
 def generate_launch_description():
     # Chemin vers le fichier de lancement du monde
@@ -16,9 +16,31 @@ def generate_launch_description():
         ))
     )
 
+    # Active le lidar
+    lds_distance = Node(
+        package='projet',
+        executable='lds_distance',
+        name='lds_distance_node',
+        on_exit=launch.actions.Shutdown(),
+        output='screen',
+        emulate_tty=True,
+    )
+
+    # Arrêt automatique en cas d'obstacel
+    automatic_stop = Node(
+        package='projet',
+        executable='automatic_stop',
+        name='automatic_stop_node',
+        on_exit=launch.actions.Shutdown(),
+        output='screen',
+        emulate_tty=True,
+    )
+
     ld = LaunchDescription()
 
     # Ajout des actions au lancement
     ld.add_action(world)
+    ld.add_action(lds_distance)
+    ld.add_action(automatic_stop)
 
     return ld

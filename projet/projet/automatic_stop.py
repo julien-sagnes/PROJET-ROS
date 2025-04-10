@@ -9,13 +9,9 @@ class AutomaticStop(Node):
         super().__init__('automatic_stop_node')
 
         # Déclare et récupère le paramètre 'distance_limit'
-        self.declare_parameter('distance_limit', 0.5)
-        self.declare_parameter('linear_scale',1.0)
-        self.declare_parameter('launch', False)
+        self.declare_parameter('distance_limit', 0.25)
 
         self.distance_limit = self.get_parameter('distance_limit').get_parameter_value().double_value
-        self.linear_scale = self.get_parameter('linear_scale').get_parameter_value().double_value
-        self.launch = self.get_parameter('launch').get_parameter_value().bool_value
 
         # Crée un abonné au sujet 'lds_distances'
         self.subscriber = self.create_subscription(
@@ -31,8 +27,6 @@ class AutomaticStop(Node):
         self.get_logger().info("Arrêt automatique activé...")
 
     def lds_callback(self, msg):
-        correction_needed = False  # Initialise correction_needed à False
-
         # Vérifie les distances et ajuste la correction si nécessaire
         if msg.data[0] < self.distance_limit:
             correction_needed = True
@@ -41,10 +35,6 @@ class AutomaticStop(Node):
             stop_msg.angular.z = 0.0
             self.publisher.publish(stop_msg)
             self.get_logger().info("Obstacle détecté à l'avant ! Arrêt.")
-
-        else:
-            if not self.launch:
-                self.get_logger().info("Arrêt automatique activé...")
 
 def main(args=None):
     rclpy.init(args=args)
