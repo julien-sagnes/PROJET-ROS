@@ -20,7 +20,7 @@ class LineFollowingNode(Node):
         self.declare_parameter('linear_scale',0.1)
         self.linear_scale = self.get_parameter('linear_scale').get_parameter_value().double_value
         # Choix du côté du rond-point
-        self.declare_parameter('side','left')
+        self.declare_parameter('side','right')
         self.side = self.get_parameter('side').get_parameter_value().string_value
         # Choix entre simulation et réel
         self.declare_parameter('interface','/image_raw') #RAJOUTER /camera/image_raw/compressed si on veut interfacer
@@ -66,7 +66,7 @@ class LineFollowingNode(Node):
 
         # définition de la "region of interest" du champ de vision de la camera
         # Pour éviter d'etre parasité par les autres obstacles qui sont formés de lignes rouges
-        roi = img[height // 2:, :] # On ignore le quart inférieur
+        roi = img[height // 3:, :] # On ignore le quart inférieur
 
         # Conversion de RGB en HSV (meilleurs pour la détection des couleurs)
         hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
@@ -114,7 +114,7 @@ class LineFollowingNode(Node):
                 cv2.circle(roi, (cx_red, cy_red), 5, (0, 0, 255), -1)  # cercle rouge
 
                 """
-                Pour gérer le rond point :
+                Idée pour gérer la rotation du rond point (à faire) :
                 if cx_green < cx_red and cy_red > 200:  # Si on est proche de la rouge
                     cx_center = (cx_red - 10 + cx_green) // 2   # On va un peu plus vers la gauche
                     self.last_known_center = cx_center
@@ -180,7 +180,7 @@ class LineFollowingNode(Node):
                     twist = Twist()
 
                     twist.linear.x = self.linear_scale  # vitesse en ligne droite
-                    if (cx_green > 30 and cy_green > 30) and (cx_red > 30 and cy_red > 30):
+                    if (cx_green > 40 and cy_green > 40) and (cx_red > 40 and cy_red > 40):
                         twist.angular.z = -k_p * error_corrected - k_d * derivative
                         self.get_logger().info(f'Ligne droite...')
                     else:
@@ -230,7 +230,7 @@ class LineFollowingNode(Node):
             cv2.circle(roi, (cx_red, cy_red), 5, (0, 0, 255), -1)  # cercle rouge
             self.get_logger().info(f'2. cx_red = {cx_red}, cy_red = {cy_red}')
             if M_red["m00"] != 0:
-                if cy_red > 90:    # Quand trop près de la ligne
+                if cy_red > 85:    # Quand trop près de la ligne
                     self.get_logger().info(f'Tourne vers la gauche')
                     twist = Twist()
                     twist.linear.x = 0.05
