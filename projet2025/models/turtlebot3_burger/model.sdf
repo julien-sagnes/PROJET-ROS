@@ -145,7 +145,7 @@
             </vertical> -->
           </scan>
           <range>
-            <min>0.120000</min>
+            <min>0.05</min> <!-- ATTENTION, j'ai changé car lidar traversait les murs ! valeur initiale : 0.120000-->
             <max>5.5</max>
             <resolution>0.015000</resolution>
           </range>

@@ -9,7 +9,7 @@ class AutomaticStop(Node):
         super().__init__('automatic_stop_node')
 
         # Déclare et récupère le paramètre 'distance_limit'
-        self.declare_parameter('distance_limit', 0.25)
+        self.declare_parameter('distance_limit', 0.15)
 
         self.distance_limit = self.get_parameter('distance_limit').get_parameter_value().double_value
 

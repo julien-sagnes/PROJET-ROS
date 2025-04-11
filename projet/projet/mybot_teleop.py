@@ -3,6 +3,7 @@ from rclpy.node import Node
 from rclpy.parameter import Parameter
 import click
 import threading
+from numpy import pi
 
 from geometry_msgs.msg import Twist     #Car avec ros2 topic info, on trouve /geometry_msg/msg/Twist
 from geometry_msgs.msg import Vector3   #Car avec ros2 topic info, on trouve /geometry_msg/msg/Vector3
@@ -12,8 +13,8 @@ class myTeleopNode(Node):
     def __init__(self):
         super().__init__('mybot_teleop')
 
-        self.declare_parameter('linear_scale',1.0)
-        self.declare_parameter('angular_scale',1.0)
+        self.declare_parameter('linear_scale',2.0)
+        self.declare_parameter('angular_scale',pi/2)
         self.declare_parameter('topic_publisher','/cmd_vel')
 
         self.topic_publisher = self.get_parameter('topic_publisher').get_parameter_value().string_value
