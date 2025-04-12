@@ -2,12 +2,12 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 from geometry_msgs.msg import Twist
+import math
 
 class WallFollower(Node):
     def __init__(self):
         super().__init__('wall_follower')
 
-        # Souscription aux distances LIDAR déjà traitées avec le noeud lds_distances
         self.subscriber = self.create_subscription(
             Float32MultiArray,
             '/lds_distances',
@@ -15,27 +15,39 @@ class WallFollower(Node):
             10
         )
 
-        # Publication des commandes de mouvement
         self.publisher = self.create_publisher(
             Twist,
             '/cmd_vel',
             10
         )
 
-        # Distances initialisées à infini
+        self.declare_parameter('linear_speed', 0.05)
+
+        self.linear_speed = self.get_parameter('linear_speed').get_parameter_value().double_value
+
         self.front_dist = float('inf')
         self.left_dist = float('inf')
         self.right_dist = float('inf')
 
-        self.declare_parameter('linear_speed', 0.1)
-        self.linear_speed = self.get_parameter('linear_speed').get_parameter_value().double_value
+        # PID
+        self.kp = 8.0
+        self.ki = 0.4
+        self.kd = 1.0
+        self.last_error = 0.0
+        self.integral = 0.0
+        self.last_time = self.get_clock().now().nanoseconds / 1e9
 
-        self.kp = 0.5
+        # Gérer les dispartions de murs
+        self.lost_wall_timeout = 0.8
+        self.last_wall_seen_time = self.last_time
 
-        self.get_logger().info("wall_follower_node started.")
+        self.search_direction = 1  # 1 = gauche, -1 = droite
+        self.search_phase_start = self.get_clock().now().nanoseconds / 1e9
+        self.search_duration = 1.0  # durée initiale de chaque phase (sec)
+
+        self.get_logger().info("Wall follower node started.")
 
     def dist_callback(self, msg):
-        # Réception des 3 distances : front, left, right (sans back inutile)
         if len(msg.data) >= 3:
             self.front_dist = msg.data[0]
             self.left_dist = msg.data[1]
@@ -45,34 +57,63 @@ class WallFollower(Node):
     def control_loop(self):
         twist = Twist()
 
-        # Vérifie si les distances sont valides
-        if self.left_dist == float('inf') or self.right_dist == float('inf'):
-            self.get_logger().warn("Pas de mur, en attente de données LIDAR...")
-            twist.linear.x = 0.0
-            twist.angular.z = 0.0
+        current_time = self.get_clock().now().nanoseconds / 1e9
+        dt = current_time - self.last_time
+        dt = max(dt, 1e-4)  # éviter division par 0
+
+        # Cas de perte du mur gauche
+        if self.left_dist > 0.2:
+            time_since_wall = current_time - self.last_wall_seen_time
+
+            if time_since_wall > self.lost_wall_timeout:
+                twist.linear.x = 0.0
+
+                # Temps depuis le début de cette phase de rotation
+                time_in_phase = current_time - self.search_phase_start
+
+                # Si on dépasse la durée prévue, on change de direction
+                if time_in_phase > self.search_duration:
+                    self.search_direction *= -1  # changer de sens
+                    self.search_phase_start = current_time
+
+                    if self.search_direction == 1:
+                        # à chaque retour à gauche, on augmente la durée
+                        self.search_duration += 1.0
+
+                twist.angular.z = 0.4 * self.search_direction  # tourner à gauche ou droite
+
+                direction_str = "gauche" if self.search_direction == 1 else "droite"
+                self.get_logger().warn(f"Mur perdu : recherche vers la {direction_str} pendant {self.search_duration:.1f}s")
+
+                self.publisher.publish(twist)
+                return
+        else:
+            self.last_wall_seen_time = current_time
+
+        if any(d in [float('inf'), float('-inf')] for d in [self.left_dist, self.right_dist, self.front_dist]):
+            self.get_logger().warn("Données LIDAR incomplètes...")
 
         else:
-            # Ajouter une marge de sécurité
-            desired_distance = 0.5  # Distance souhaitée par rapport au mur (en mètres)
-            error = (self.left_dist - desired_distance) - (self.right_dist - desired_distance)
+            # Suivi de mur latéral
+            error = self.left_dist - self.right_dist
+            self.integral += error * dt
+            derivative = (error - self.last_error) / dt
 
-            # Gérer les cas où le robot est trop proche d'un mur
-            if self.left_dist < 0.1 or self.right_dist < 0.1:
-                twist.linear.x = self.linear_speed / 2  # Réduire la vitesse
-                twist.angular.z = -self.kp * error * 2  # Augmenter la correction angulaire
-            else:
-                twist.linear.x = self.linear_speed
-                twist.angular.z = -self.kp * error  # Négatif car tourne vers côté plus proche
+            correction = (
+                self.kp * error +
+                self.ki * self.integral +
+                self.kd * derivative
+            )
 
-            # Éviter les obstacles frontaux
-            if self.front_dist < 0.2:
-                twist.linear.x = 0.0  # S'arrêter
-                twist.angular.z = 0.5  # Tourner pour éviter l'obstacle
+            twist.linear.x = self.linear_speed
+            twist.angular.z = correction
 
-            self.get_logger().info(f"right = {self.right_dist}, left = {self.left_dist}")
-            self.get_logger().info(f"error = {error}")
+            self.get_logger().info(f"Left: {self.left_dist:.3f}, Right: {self.right_dist:.3f}, Error: {error:.3f}, Angular Z: {twist.angular.z:.3f}")
+
             self.publisher.publish(twist)
 
+            self.last_error = error
+            self.last_time = current_time
 
 def main(args=None):
     rclpy.init(args=args)
@@ -80,6 +121,3 @@ def main(args=None):
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
-
-if __name__ == '__main__':
-    main()
