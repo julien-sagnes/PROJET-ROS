@@ -7,6 +7,7 @@ import cv2 # utilisé pour le traitement d'image
 import numpy as np
 import click
 import threading
+import matplotlib.pyplot as plt 
 
 from sensor_msgs.msg import CompressedImage
 from sensor_msgs.msg import Image
@@ -17,7 +18,7 @@ class LineFollowingNode(Node):
         super().__init__('line_following_node') # initialisation du noeud avec le nom "line_following_node"
 
         # Choix de la vitesse global
-        self.declare_parameter('linear_scale',0.1)
+        self.declare_parameter('linear_scale',0.07)
         self.linear_scale = self.get_parameter('linear_scale').get_parameter_value().double_value
         # Choix du côté du rond-point
         self.declare_parameter('side','right')
@@ -38,14 +39,14 @@ class LineFollowingNode(Node):
         self.get_logger().info('Line following node started.')
 
         # Seuil HSV (Hue, Saturation, Value) pour détecter les couleurs (plus précisément pour isoler les pixels rouges et verts)
-        self.lower_red1 = np.array([0, 70, 50])
+        self.lower_red1 = np.array([0, 60, 50])
         self.upper_red1 = np.array([10, 255, 255])
-        self.lower_red2 = np.array([160, 70, 50])
+        self.lower_red2 = np.array([160, 50, 50])
         self.upper_red2 = np.array([180, 255, 255])
 
         # Vert plus large
-        self.lower_green = np.array([30, 40, 40])
-        self.upper_green = np.array([90, 255, 255])
+        self.lower_green = np.array([25, 30, 30])
+        self.upper_green = np.array([95, 255, 255])
 
         # définition des paramètres pour calculer le centre de la trajectoire avec un PID
         self.previous_error = 0.0 # Variable pour garder une trace de l'erreur dans le controle PID
@@ -63,10 +64,9 @@ class LineFollowingNode(Node):
             cv2.imshow('Camera View', img)
         
         height, width, _ = img.shape
-
         # définition de la "region of interest" du champ de vision de la camera
         # Pour éviter d'etre parasité par les autres obstacles qui sont formés de lignes rouges
-        roi = img[height // 3:, :] # On ignore le quart inférieur
+        roi = img[height // 4:, :] # On ignore le quart inférieur
 
         # Conversion de RGB en HSV (meilleurs pour la détection des couleurs)
         hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
@@ -97,6 +97,7 @@ class LineFollowingNode(Node):
         # Calcul de la trajectoire
         # Si les 2 lignes sont détectées
         if contours_red and contours_green:
+            
             # Si des contours sont trouvés, on calcul les moments des contours
             M_red = cv2.moments(contours_red[0])
             M_green = cv2.moments(contours_green[0])
@@ -107,12 +108,17 @@ class LineFollowingNode(Node):
                 cy_red = int(M_red["m01"] / M_red["m00"])
                 cx_green = int(M_green["m10"] / M_green["m00"])
                 cy_green = int(M_green["m01"] / M_green["m00"])
+                cx_center = (cx_green+cx_red)//2
+                cy_center = (cy_green + cy_red)//2
 
                 self.get_logger().info(f'1. cx_green = {cx_green}, cy_green = {cy_green}')
                 self.get_logger().info(f'1. cx_red = {cx_red}, cy_red = {cy_red}')
                 cv2.circle(roi, (cx_green, cy_green), 5, (0, 255, 0), -1)  # cercle vert
-                cv2.circle(roi, (cx_red, cy_red), 5, (0, 0, 255), -1)  # cercle rouge
-
+                cv2.circle(roi, (cx_red, cy_red), 5, (0, 0, 255), -1)  # cercle rouge 
+                cv2.circle(roi, (cx_center, cy_center), 5, (255, 0, 0), -1) # cercle bleu
+                print (f'cx_red = {cx_red} , cy_red = {cy_red}')
+                print (f'cx_green = {cx_green} , cy_green = {cy_green}')
+                print (f'center_x = {cx_center} , center_y = {cy_center}')
                 """
                 Idée pour gérer la rotation du rond point (à faire) :
                 if cx_green < cx_red and cy_red > 200:  # Si on est proche de la rouge
@@ -163,7 +169,7 @@ class LineFollowingNode(Node):
                 """
 
                 if cx_green < cx_red:
-                    cx_center = (cx_red + cx_green) // 2
+        
                     self.last_known_center = cx_center
 
                     error = cx_center - width // 2 #calcul de l'erreur : différence entre le centre du chemin et le centre de l'image 
@@ -180,7 +186,7 @@ class LineFollowingNode(Node):
                     twist = Twist()
 
                     twist.linear.x = self.linear_scale  # vitesse en ligne droite
-                    if (cx_green > 40 and cy_green > 40) and (cx_red > 40 and cy_red > 40):
+                    if (cx_green > 45 and cy_green > 45) and (cx_red > 45 and cy_red > 45):
                         twist.angular.z = -k_p * error_corrected - k_d * derivative
                         self.get_logger().info(f'Ligne droite...')
                     else:
@@ -189,7 +195,7 @@ class LineFollowingNode(Node):
                     self.cmd_vel_publisher.publish(twist)
 
                 else:
-                    if cy_green > 90:   #Si on se rapproche du rond-point
+                    if cy_green > 70:   #Si on se rapproche du rond-point
                         if self.side == 'left':
                             self.get_logger().info(f'Tourne à gauche au rond point')
                             twist = Twist()
@@ -200,25 +206,25 @@ class LineFollowingNode(Node):
                             self.get_logger().info(f'Tourne à droite au rond point')
                             twist = Twist()
                             twist.linear.x = 0.01
-                            twist.angular.z = -0.5
+                            twist.angular.z = -0.55
                             self.cmd_vel_publisher.publish(twist)
                         else : 
                             raise ValueError("Doit être un des côtés 'left' or 'right' !")
 
         elif contours_green and not contours_red:
             # Ligne verte seulement -> tourne vers la droite
-            self.get_logger().info(f'Virage serré !')
+            self.get_logger().info(f'Virage à droite à venir !')
             M_green = cv2.moments(contours_green[0])
             cx_green = int(M_green["m10"] / M_green["m00"])
             cy_green = int(M_green["m01"] / M_green["m00"])
             cv2.circle(roi, (cx_green, cy_green), 5, (0, 255, 0), -1)  # cercle vert
             self.get_logger().info(f'2. cx_green = {cx_green}, cy_green = {cy_green}')
             if M_green["m00"] != 0:
-                if cy_green > 70:  # Quand trop près de la ligne
+                if cy_green > 75 :  # Quand trop près de la ligne
                     self.get_logger().info(f'Tourne vers la droite')
                     twist = Twist()
-                    twist.linear.x = 0.05
-                    twist.angular.z = -0.5
+                    twist.linear.x = 0.03
+                    twist.angular.z = -0.55
                     self.cmd_vel_publisher.publish(twist)
 
         elif contours_red and not contours_green:
@@ -230,11 +236,11 @@ class LineFollowingNode(Node):
             cv2.circle(roi, (cx_red, cy_red), 5, (0, 0, 255), -1)  # cercle rouge
             self.get_logger().info(f'2. cx_red = {cx_red}, cy_red = {cy_red}')
             if M_red["m00"] != 0:
-                if cy_red > 85:    # Quand trop près de la ligne
+                if cy_red > 75:    # Quand trop près de la ligne
                     self.get_logger().info(f'Tourne vers la gauche')
                     twist = Twist()
-                    twist.linear.x = 0.05
-                    twist.angular.z = 0.5
+                    twist.linear.x = 0.03
+                    twist.angular.z = 0.55
                     self.cmd_vel_publisher.publish(twist)
 
         else:
@@ -245,12 +251,14 @@ class LineFollowingNode(Node):
             self.cmd_vel_publisher.publish(twist)
 
         # Optionnel : affichage debug
-        cv2.imshow('ROI', roi)
+        
         #cv2.imshow('Red Mask', mask_red_clean)
         #cv2.imshow('Green Mask', mask_green_clean)
+        cv2.imshow('ROI', roi)
         cv2.imshow('Red Mask (raw)', mask_red)
         cv2.imshow('Green Mask (raw)', mask_green)
         cv2.waitKey(1)
+        
 
     # Fonction pour arreter le robot
     def stop_robot(self):
