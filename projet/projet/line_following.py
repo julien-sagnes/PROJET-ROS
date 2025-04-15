@@ -5,10 +5,8 @@ from geometry_msgs.msg import PoseStamped
 from cv_bridge import CvBridge # convertit les images de ROS en OpenCV
 import cv2 # utilisé pour le traitement d'image
 import numpy as np
-import click
+#import click
 import threading
-import matplotlib.pyplot as plt 
-
 from sensor_msgs.msg import CompressedImage
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist
@@ -38,15 +36,20 @@ class LineFollowingNode(Node):
 
         self.get_logger().info('Line following node started.')
 
-        # Seuil HSV (Hue, Saturation, Value) pour détecter les couleurs (plus précisément pour isoler les pixels rouges et verts)
+        # Seuil HSV (Hue, Saturation, Value) pour détecter les couleurs (plus précisément pour isoler les pixels rouges, verts et bleus)
+        # Rouges
         self.lower_red1 = np.array([0, 60, 50])
         self.upper_red1 = np.array([10, 255, 255])
         self.lower_red2 = np.array([160, 50, 50])
         self.upper_red2 = np.array([180, 255, 255])
 
-        # Vert plus large
+        # Verts 
         self.lower_green = np.array([25, 30, 30])
         self.upper_green = np.array([95, 255, 255])
+
+        # Bleus
+        self.lower_blue = np.array([100, 150, 50])
+        self.upper_blue = np.array([140, 255, 255])
 
         # définition des paramètres pour calculer le centre de la trajectoire avec un PID
         self.previous_error = 0.0 # Variable pour garder une trace de l'erreur dans le controle PID
@@ -55,7 +58,7 @@ class LineFollowingNode(Node):
 
         # Paramètre à changer pour le passage du rond point à droite (True) ou à gauche (False)
         self.passage_a_droite = False
-
+        
     # Fonction qui est appelée à chaque fois qu'une nouvelle image est reçue
     def image_callback(self, img_msg):
         # conversion de l'image en OpenCV
@@ -79,6 +82,7 @@ class LineFollowingNode(Node):
         mask_red2 = cv2.inRange(hsv, self.lower_red2, self.upper_red2)
         mask_red = cv2.bitwise_or(mask_red1, mask_red2)
         mask_green = cv2.inRange(hsv, self.lower_green, self.upper_green)
+        mask_blue = cv2.inRange(hsv, self.lower_blue, self.upper_blue)
         
         # Morphologie (filtrage pour enlever le bruit des filtres)
         kernel = np.ones((5, 5), np.uint8)
@@ -86,24 +90,37 @@ class LineFollowingNode(Node):
         mask_red_clean = cv2.morphologyEx(mask_red_clean, cv2.MORPH_CLOSE, kernel)
         mask_green_clean = cv2.morphologyEx(mask_green, cv2.MORPH_OPEN, kernel)
         mask_green_clean = cv2.morphologyEx(mask_green_clean, cv2.MORPH_CLOSE, kernel)
+        mask_blue_clean = cv2.morphologyEx(mask_blue, cv2.MORPH_OPEN, kernel)
+        mask_blue_clean = cv2.morphologyEx(mask_blue_clean, cv2.MORPH_CLOSE, kernel)
 
         # Contours des limites droite et gauche du chemin à suivre
         contours_red, _ = cv2.findContours(mask_red_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contours_green, _ = cv2.findContours(mask_green_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours_blue, _ = cv2.findContours(mask_blue_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         # On ne garde que la plus grande aire formée par les contours (= correspond à la ligne)
         if contours_red:
             contours_red = [max(contours_red, key=cv2.contourArea)]
         if contours_green:
             contours_green = [max(contours_green, key=cv2.contourArea)]
+        if contours_blue:
+            contours_blue = [max(contours_blue, key=cv2.contourArea)]
+
+        if contours_blue :
+            M_blue = cv2.moments(contours_blue[0])
+            if M_blue["m00"] != 0 :
+                cx_blue = int(M_blue["m10"] / M_blue["m00"])
+                cy_blue = int(M_blue["m01"] / M_blue["m00"])
+                cv2.circle(roi, (cx_blue, cy_blue), 5, (255, 0, 0), -1)
+                self.get_logger().info(f'1. cx_blue = {cx_blue}, cy_blue = {cy_blue}')
 
         # Calcul de la trajectoire
         # Si les 2 lignes sont détectées
         if contours_red and contours_green:
-            
             # Si des contours sont trouvés, on calcul les moments des contours
             M_red = cv2.moments(contours_red[0])
             M_green = cv2.moments(contours_green[0])
+        
             # pour obtenir leur centre de gravité
             if M_red["m00"] != 0 and M_green["m00"] != 0:
                 #calcul des coordonnées centrales des lignes rouge et verte, puis calcul du centre du chemin
@@ -118,58 +135,11 @@ class LineFollowingNode(Node):
                 self.get_logger().info(f'1. cx_red = {cx_red}, cy_red = {cy_red}')
                 cv2.circle(roi, (cx_green, cy_green), 5, (0, 255, 0), -1)  # cercle vert
                 cv2.circle(roi, (cx_red, cy_red), 5, (0, 0, 255), -1)  # cercle rouge 
-                cv2.circle(roi, (cx_center, cy_center), 5, (255, 0, 0), -1) # cercle bleu
+                cv2.circle(roi, (cx_center, cy_center), 5, (35, 255, 255), -1) # cercle bleu
                 print (f'cx_red = {cx_red} , cy_red = {cy_red}')
                 print (f'cx_green = {cx_green} , cy_green = {cy_green}')
                 print (f'center_x = {cx_center} , center_y = {cy_center}')
-                """
-                Idée pour gérer la rotation du rond point (à faire) :
-                if cx_green < cx_red and cy_red > 200:  # Si on est proche de la rouge
-                    cx_center = (cx_red - 10 + cx_green) // 2   # On va un peu plus vers la gauche
-                    self.last_known_center = cx_center
-
-                    error = cx_center - width // 2 #calcul de l'erreur : différence entre le centre du chemin et le centre de l'image 
-                    # cette erreur est utilisée pour corriger la direction du robot
-                    error_corrected = error  # pour compenser la tendance à gauche
-
-                    #Application d'un PID simplifié (Proportionnel + dérivé) pour ajuster la direction du robot
-                    k_p = 0.01
-                    k_d = 0.01
-                    derivative = error_corrected - self.previous_error
-                    self.previous_error = error_corrected
-                    
-                    # Commandes de mouvement: le robot avance avec une vitesse linéaire et tourne selon l'erreur calculée (PID)
-                    twist = Twist()
-                    twist.linear.x = self.linear_scale
-                    twist.angular.z = -k_p * error_corrected - k_d * derivative
-
-                    self.get_logger().info(f'Virage !')
-
-                    self.cmd_vel_publisher.publish(twist)
-
-                elif cx_green < cx_red and cy_green > 200:  # Si on est proche de la verte
-                    cx_center = (cx_red + 10 + cx_green) // 2   # On va un peu plus vers la droite
-                    self.last_known_center = cx_center
-
-                    error = cx_center - width // 2 #calcul de l'erreur : différence entre le centre du chemin et le centre de l'image 
-                    # cette erreur est utilisée pour corriger la direction du robot
-                    error_corrected = error  # pour compenser la tendance à gauche
-
-                    #Application d'un PID simplifié (Proportionnel + dérivé) pour ajuster la direction du robot
-                    k_p = 0.01
-                    k_d = 0.01
-                    derivative = error_corrected - self.previous_error
-                    self.previous_error = error_corrected
-                    
-                    # Commandes de mouvement: le robot avance avec une vitesse linéaire et tourne selon l'erreur calculée (PID)
-                    twist = Twist()
-                    twist.linear.x = self.linear_scale
-                    twist.angular.z = -k_p * error_corrected - k_d * derivative
-
-                    self.get_logger().info(f'Virage !')
-
-                    self.cmd_vel_publisher.publish(twist)
-                """
+               
                 if cx_green < cx_red :
                     
 
