@@ -27,6 +27,7 @@ setup(
             'teleop = projet.mybot_teleop:main',
             'automatic_stop = projet.automatic_stop:main',
             'lds_distance = projet.lds_distance:main',
+            'contourne_obstacles = projet.contourne_obstacles:main',
             'wall_follower = projet.wall_follower:main',
         ],
     },

@@ -26,7 +26,7 @@ def generate_launch_description():
         emulate_tty=True,
     )
 
-    # Arrêt automatique en cas d'obstacle
+    # Arrêt automatique en cas d'obstacel
     automatic_stop = Node(
         package='projet',
         executable='automatic_stop',
@@ -36,11 +36,22 @@ def generate_launch_description():
         emulate_tty=True,
     )
 
+    contourne_obstacles = Node(
+        package='projet',
+        executable='contourne_obstacles',
+        name='contourne_obstacles_node',
+        on_exit=launch.actions.Shutdown(),
+        output='screen',
+        emulate_tty=True,
+    )
+
+
     ld = LaunchDescription()
 
     # Ajout des actions au lancement
     ld.add_action(world)
     ld.add_action(lds_distance)
     ld.add_action(automatic_stop)
+    ld.add_action(contourne_obstacles)
 
     return ld
