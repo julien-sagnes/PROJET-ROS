@@ -69,6 +69,10 @@ class WallFollower(Node):
             )
 
             twist.linear.x = self.linear_speed
+            # Retour à une ligne droite
+            if (error < 0 and correction > 0) or (error > 0 and correction < 0):
+                correction = - correction
+                self.integral = 0.0
             twist.angular.z = correction
 
             self.last_error = error

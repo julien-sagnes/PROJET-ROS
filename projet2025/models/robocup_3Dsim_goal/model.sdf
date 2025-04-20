@@ -1,6 +1,6 @@
 <sdf version="1.5">
   <model name="robocup_3d_goal">
-   <pose>0.586 -0.499 0 0 0 1.036</pose>
+   <pose>0.595 -0.7 0 0 0 1.454</pose>
     <static>true</static>
     <link name="left_post">
       <pose>0 -0.21 0.15 0 0 0</pose>
