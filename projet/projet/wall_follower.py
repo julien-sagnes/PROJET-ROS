@@ -21,7 +21,7 @@ class WallFollower(Node):
             10
         )
 
-        self.declare_parameter('linear_speed', 0.05)
+        self.declare_parameter('linear_speed', 0.1)
         self.linear_speed = self.get_parameter('linear_speed').get_parameter_value().double_value
 
         self.front_dist = float('inf')

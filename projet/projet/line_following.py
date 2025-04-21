@@ -18,9 +18,9 @@ class LineFollowingNode(Node):
         # Choix de la vitesse global
         self.declare_parameter('linear_scale',0.07)
         self.linear_scale = self.get_parameter('linear_scale').get_parameter_value().double_value
-        # Choix du côté du rond-point
-        self.declare_parameter('side','right')
-        self.side = self.get_parameter('side').get_parameter_value().string_value
+        # Choix du côté du rond-point (True : à droite, False : à gauche)
+        self.declare_parameter('side',True)
+        self.passage_a_droite = self.get_parameter('side').get_parameter_value().string_value
         # Choix entre simulation et réel
         self.declare_parameter('interface','/image_raw') #RAJOUTER /camera/image_raw/compressed si on veut interfacer
         self.interface = self.get_parameter('interface').get_parameter_value().string_value
@@ -55,9 +55,6 @@ class LineFollowingNode(Node):
         self.previous_error = 0.0 # Variable pour garder une trace de l'erreur dans le controle PID
         # utilisé pour ajuster la direction du robot
         self.last_known_center = 0.0 # dernière position centrale connue du robot
-
-        # Paramètre à changer pour le passage du rond point à droite (True) ou à gauche (False)
-        self.passage_a_droite = False
         
     # Fonction qui est appelée à chaque fois qu'une nouvelle image est reçue
     def image_callback(self, img_msg):
@@ -175,27 +172,27 @@ class LineFollowingNode(Node):
                         self.cmd_vel_publisher.publish(twist)
                     
                     else :
-                        self.get_logger().info("on continue tout droit je suis dans le ELSE avec 2 couleurs!!")
+                        self.get_logger().info("2 couleurs détéctées")
                         twist = Twist()
                         twist.linear.x = self.linear_scale # on maintient la vitesse en ligne droite
                         twist.angular.z = 0.0
                         self.cmd_vel_publisher.publish(twist)
 
                 if cx_red < cx_green :
-                    self.get_logger().info("On est au rond-point, je vais où ??")
-                    if cx_green > 500 and cy_green >160 :
-                        if self.passage_a_droite == True :
+                    self.get_logger().info("On est au rond-point, je vais où ?")
+                    if cy_green > 120 :
+                        if self.passage_a_droite :
                             self.get_logger().info("JE PASSE A DROITE !!!")
                             twist = Twist()
                             twist.linear.x = 0.02 # on maintient la vitesse en ligne droite
-                            twist.angular.z = -0.5
+                            twist.angular.z = 0.5
                             self.cmd_vel_publisher.publish(twist)
                         
                         else :
                             self.get_logger().info("JE PASSE A GAUCHE !!!")
                             twist = Twist()
                             twist.linear.x = 0.02 # on maintient la vitesse en ligne droite
-                            twist.angular.z = 0.5
+                            twist.angular.z = -0.5
                             self.cmd_vel_publisher.publish(twist)
 
                 
