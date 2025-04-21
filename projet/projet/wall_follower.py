@@ -21,7 +21,7 @@ class WallFollower(Node):
             10
         )
 
-        self.declare_parameter('linear_speed', 0.1)
+        self.declare_parameter('linear_speed', 0.05)
         self.linear_speed = self.get_parameter('linear_speed').get_parameter_value().double_value
 
         self.front_dist = float('inf')
@@ -35,6 +35,7 @@ class WallFollower(Node):
         self.last_error = 0.0
         self.integral = 0.0
         self.last_time = self.get_clock().now().nanoseconds / 1e9
+        self.coef = 1
 
         self.get_logger().info("Wall follower node started.")
 
@@ -52,10 +53,25 @@ class WallFollower(Node):
         dt = current_time - self.last_time
         dt = max(dt, 1e-4)  # éviter division par 0
 
-        if any(d in [float('inf'), float('-inf')] for d in [self.left_dist, self.right_dist]) or self.left_dist > 0.18 or self.right_dist > 0.18:
-            self.get_logger().warn("Mur perdu ! Recherche...")
+        # Retour en ligne droite (réinitialisation du PID progressif)
+        if self.front_dist > 0.5 or math.isinf(self.front_dist):
+            self.coef -= 0.01
+            self.get_logger().warn("Détection de ligne droite.")
+            self.integral = max(self.integral * self.coef, 0)
+
+        # Virage à gauche
+        if any(d in [float('inf'), float('-inf')] for d in [self.left_dist]) or self.left_dist > 0.2:
+            self.get_logger().warn("Correction à droite...")
             twist.linear.x = self.linear_speed / 2
-            twist.angular.z = -0.1
+            twist.angular.z = - 0.1
+            self.coef = 1
+
+        # Virage à droite
+        elif any(d in [float('inf'), float('-inf')] for d in [self.right_dist]) or self.right_dist > 0.2:
+            self.get_logger().warn("Correction à gauche...")
+            twist.linear.x = self.linear_speed / 2
+            twist.angular.z = + 0.1
+            self.coef = 1
 
         else:
             error = self.left_dist - self.right_dist
@@ -69,16 +85,12 @@ class WallFollower(Node):
             )
 
             twist.linear.x = self.linear_speed
-            # Retour à une ligne droite
-            if (error < 0 and correction > 0) or (error > 0 and correction < 0):
-                correction = - correction
-                self.integral = 0.0
             twist.angular.z = correction
 
             self.last_error = error
 
             self.get_logger().info(
-                f"Left: {self.left_dist:.3f}, Right: {self.right_dist:.3f}, Error: {error:.3f}, Angular Z: {twist.angular.z:.3f}")
+                f"Front : {self.front_dist}, Left: {self.left_dist:.3f}, Right: {self.right_dist:.3f}, Error: {error:.3f}, Angular Z: {twist.angular.z:.3f}")
 
         self.publisher.publish(twist)
 
