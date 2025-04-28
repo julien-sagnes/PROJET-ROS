@@ -11,7 +11,7 @@ import threading
 from sensor_msgs.msg import CompressedImage
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist
-from std_msgs.msg import Float32MultiArray, Bool
+from std_msgs.msg import Bool
 
 class LineFollowingNode(Node):
     def __init__(self):
@@ -27,17 +27,17 @@ class LineFollowingNode(Node):
         self.declare_parameter('interface','/image_raw') #RAJOUTER /camera/image_raw/compressed si on veut interfacer
         self.interface = self.get_parameter('interface').get_parameter_value().string_value
 
+        # Connexion à automatic_stop
+        self.stop_subscriber = self.create_subscription(Bool, 'stop_running', self.stop_callback, 10)
+        self.stop_running = Bool()
+        self.stop_running.data = False
+
         if self.interface == '/image_raw':
             self.image_subscriber = self.create_subscription(Image, self.interface, self.image_callback, 10) # création d'un suscriber qui écoute les images de la camera
         else:
             self.image_subscriber = self.create_subscription(CompressedImage, self.interface, self.image_callback, 10) # création d'un suscriber qui écoute les images de la camera
         self.cmd_vel_publisher = self.create_publisher(Twist, '/cmd_vel', 10) # envoie les commandes de déplacement
         
-        self.get_logger().info('Connexion à automatic_stop...')
-        self.stop_subscriber = self.create_subscription(Bool, 'stop_running', self.stop_callback, 10)
-        self.stop_running = Bool()
-        self.stop_running.data = False
-
         # instanciation pour convertir l'image de la camera en image OpenCV
         self.bridge = CvBridge()
 
@@ -69,7 +69,7 @@ class LineFollowingNode(Node):
         
     # Fonction qui est appelée à chaque fois qu'une nouvelle image est reçue
     def image_callback(self, img_msg):
-        if not self.stop_running.data:
+        if not self.stop_running:
             # conversion de l'image en OpenCV
             if self.interface == '/image_raw':
                 img = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding='bgr8')

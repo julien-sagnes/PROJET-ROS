@@ -74,20 +74,20 @@ class GoalBall(Node):
             center_x = self.image_width // 2
             error = self.ball_x - center_x
 
-            # Si on commence à pousser la balle pendant 2 secondes
+            # Si on commence à pousser la balle pendant 2 secondes vers la gauche
             if not self.pushing_ball:
                 self.pushing_ball = True
                 self.start_time = time.time()
 
-            # Si le robot pousse la balle
+            # Si le robot pousse la balle vers la gauche
             if self.pushing_ball:
                 twist.linear.x = 0.2  # Vitesse modérée pour pousser la balle
-                twist.angular.z = -0.002 * error  # Ajuster pour centrer la balle
+                twist.angular.z = 0.1  # Légère rotation à droite pour pousser la balle vers la gauche
                 # Vérifier si 2 secondes se sont écoulées
                 if time.time() - self.start_time > 2:
                     self.pushing_ball = False  # Arrêter de pousser la balle après 2 secondes
                     self.contouring_ball = True  # Passer à l'étape suivante : contourner la balle
-                    self.get_logger().info("Balle poussée pendant 2 secondes, contournement imminent")
+                    self.get_logger().info("Balle poussée vers la gauche, contournement imminent")
             
             # Si le robot doit contourner la balle (se positionner à sa gauche)
             if self.contouring_ball:

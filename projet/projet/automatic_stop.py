@@ -34,17 +34,17 @@ class AutomaticStop(Node):
         # Vérifie les distances et ajuste la correction si nécessaire
         msg_bool = Bool()
         if msg.data[0] < self.distance_limit:
+            msg_bool.data = True
+            self.publisher_stop.publish(msg_bool)
+
             correction_needed = True
             stop_msg = Twist()
             stop_msg.linear.x = 0.0
             stop_msg.angular.z = 0.0
             self.publisher.publish(stop_msg)
             self.get_logger().info("Obstacle détecté à l'avant ! Arrêt.")
-            msg_bool.data = True
         else:
             msg_bool.data = False
-
-        self.publisher_stop.publish(msg_bool)
 
 def main(args=None):
     rclpy.init(args=args)
