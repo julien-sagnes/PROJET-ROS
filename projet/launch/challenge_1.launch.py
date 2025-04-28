@@ -36,15 +36,6 @@ def generate_launch_description():
         emulate_tty=True,
     )
 
-    contourne_obstacles = Node(
-        package='projet',
-        executable='contourne_obstacles',
-        name='contourne_obstacles_node',
-        on_exit=launch.actions.Shutdown(),
-        output='screen',
-        emulate_tty=True,
-    )
-
 
     ld = LaunchDescription()
 

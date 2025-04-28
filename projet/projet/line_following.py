@@ -7,9 +7,11 @@ import cv2 # utilisé pour le traitement d'image
 import numpy as np
 #import click
 import threading
+
 from sensor_msgs.msg import CompressedImage
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import Twist
+from std_msgs.msg import Float32MultiArray, Bool
 
 class LineFollowingNode(Node):
     def __init__(self):
@@ -31,8 +33,10 @@ class LineFollowingNode(Node):
             self.image_subscriber = self.create_subscription(CompressedImage, self.interface, self.image_callback, 10) # création d'un suscriber qui écoute les images de la camera
         self.cmd_vel_publisher = self.create_publisher(Twist, '/cmd_vel', 10) # envoie les commandes de déplacement
         
-        self.stop_subscriber = self.create_subscription(bool, '/stop_running', self.stop_callback, 10)
-        self.stop_running = False
+        self.get_logger().info('Connexion à automatic_stop...')
+        self.stop_subscriber = self.create_subscription(Bool, 'stop_running', self.stop_callback, 10)
+        self.stop_running = Bool()
+        self.stop_running.data = False
 
         # instanciation pour convertir l'image de la camera en image OpenCV
         self.bridge = CvBridge()
@@ -65,7 +69,7 @@ class LineFollowingNode(Node):
         
     # Fonction qui est appelée à chaque fois qu'une nouvelle image est reçue
     def image_callback(self, img_msg):
-        if not self.stop_running:
+        if not self.stop_running.data:
             # conversion de l'image en OpenCV
             if self.interface == '/image_raw':
                 img = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding='bgr8')
@@ -275,6 +279,8 @@ class LineFollowingNode(Node):
             cv2.imshow('Green Mask (raw)', mask_green)
             cv2.waitKey(1)
         
+        else:
+            self.get_logger().warn('Obstacle devant !')
 
     # Fonction pour arreter le robot
     def stop_robot(self):
