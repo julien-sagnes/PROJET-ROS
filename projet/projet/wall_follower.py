@@ -8,7 +8,7 @@ from std_msgs.msg import Float32MultiArray
 
 class WallFollower(Node):
     def __init__(self):
-        super().__init__('wall_follower')
+        super().__init__('wall_follower_node')
 
         self.subscriber = self.create_subscription(
             Float32MultiArray,
@@ -31,8 +31,8 @@ class WallFollower(Node):
         self.right_dist = float('inf')
 
         # PID
-        self.kp = 7.0
-        self.ki = 0.4
+        self.kp = 6.0
+        self.ki = 0.5
         self.kd = 1.0
         self.last_error = 0.0
         self.integral = 0.0
@@ -57,7 +57,7 @@ class WallFollower(Node):
 
         # Retour en ligne droite (réinitialisation du PID progressif)
         if self.front_dist > 1.0 or math.isinf(self.front_dist):
-            self.coef -= 0.03   # à modifier avec test sur robot réel
+            self.coef -= 0.07   # à modifier avec test sur robot réel
             self.get_logger().warn("Détection de ligne droite.")
             self.integral *= self.coef
             if self.integral < 0:
@@ -67,14 +67,14 @@ class WallFollower(Node):
         # Virage à gauche
         if any(d in [float('inf'), float('-inf')] for d in [self.left_dist]) or self.left_dist > 0.2:
             self.get_logger().warn("Correction à droite...")
-            twist.linear.x = self.linear_speed / 2
-            twist.angular.z = - 0.1
+            twist.linear.x = self.linear_speed
+            twist.angular.z = - 0.10
 
         # Virage à droite
         elif any(d in [float('inf'), float('-inf')] for d in [self.right_dist]) or self.right_dist > 0.2:
             self.get_logger().warn("Correction à gauche...")
-            twist.linear.x = self.linear_speed / 2
-            twist.angular.z = + 0.1
+            twist.linear.x = self.linear_speed
+            twist.angular.z = + 0.10
 
         else:
             error = self.left_dist - self.right_dist

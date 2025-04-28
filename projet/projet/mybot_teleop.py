@@ -11,9 +11,9 @@ from geometry_msgs.msg import Vector3   #Car avec ros2 topic info, on trouve /ge
 class myTeleopNode(Node):
 
     def __init__(self):
-        super().__init__('mybot_teleop')
+        super().__init__('mybot_teleop_node')
 
-        self.declare_parameter('linear_scale',2.0)
+        self.declare_parameter('linear_scale', 0.1)
         self.declare_parameter('angular_scale',pi/2)
         self.declare_parameter('topic_publisher','/cmd_vel')
 

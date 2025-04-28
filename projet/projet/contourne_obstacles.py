@@ -31,7 +31,7 @@ class ContourneObstacles(Node):
         distances = msg.ranges
         self.get_logger().info(f"[DEBUG] Nombre de distances : {len(distances)}")
 
-        for i in range (20, 55) :   
+        for i in range (20, 55) :
             if distances[i] < self.distance_limit:
                 contourne_msg = Twist()
                 contourne_msg.linear.x = 0.02
@@ -51,7 +51,7 @@ class ContourneObstacles(Node):
 
 
         if not distances:
-            self.get_logger().warn("⚠️ Aucun obstacle détecté : distances vides !")
+            self.get_logger().warn("Aucun obstacle détecté : distances vides !")
 
 def main(args=None):
     rclpy.init(args=args)

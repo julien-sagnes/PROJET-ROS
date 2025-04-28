@@ -22,8 +22,6 @@ def generate_launch_description():
         ]
     )
 
-   
-
     ld = LaunchDescription()
 
     # Ajout des actions au lancement

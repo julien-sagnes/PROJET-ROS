@@ -7,14 +7,6 @@ from launch_ros.actions import Node
 import launch  # Pour Shutdown()
 
 def generate_launch_description():
-    # Chemin vers le fichier de lancement du monde
-    world = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(
-            get_package_share_directory('projet2025'),
-            'launch',
-            'projet.launch.py'
-        ))
-    )
 
     # Active le lidar
     lds_distance = Node(
@@ -26,12 +18,21 @@ def generate_launch_description():
         emulate_tty=True,
     )
 
+    # Active le suivi de mur
+    wall_follower = Node(
+        package='projet',
+        executable='wall_follower',
+        name='wall_follower_node',
+        on_exit=launch.actions.Shutdown(),
+        output='screen',
+        emulate_tty=True,
+    )
+
 
     ld = LaunchDescription()
 
     # Ajout des actions au lancement
-    ld.add_action(world)
     ld.add_action(lds_distance)
-    ld.add_action(automatic_stop)
+    ld.add_action(wall_follower)
 
     return ld
