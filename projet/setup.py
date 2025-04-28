@@ -29,7 +29,7 @@ setup(
             'lds_distance = projet.lds_distance:main',
             'contourne_obstacles = projet.contourne_obstacles:main',
             'wall_follower = projet.wall_follower:main',
-            'goal_boal = projet.goal_boal:main',
+            'goal_ball = projet.goal_ball:main',
         ],
     },
 )
