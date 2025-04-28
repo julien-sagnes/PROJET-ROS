@@ -9,7 +9,7 @@ class AutomaticStop(Node):
         super().__init__('automatic_stop_node')
 
         # Déclare et récupère le paramètre 'distance_limit'
-        self.declare_parameter('distance_limit', 0.15)
+        self.declare_parameter('distance_limit', 0.2)
 
         self.distance_limit = self.get_parameter('distance_limit').get_parameter_value().double_value
 
@@ -20,6 +20,8 @@ class AutomaticStop(Node):
             self.lds_callback,
             10
         )
+
+        self.publisher_stop =  self.create_publisher(bool, '/stop_running', 10)
 
         # Crée un éditeur pour le sujet '/cmd_vel'
         self.publisher = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -35,6 +37,9 @@ class AutomaticStop(Node):
             stop_msg.angular.z = 0.0
             self.publisher.publish(stop_msg)
             self.get_logger().info("Obstacle détecté à l'avant ! Arrêt.")
+            self.publisher_stop(True)
+        else:
+            self.publisher_stop.publish(False)
 
 def main(args=None):
     rclpy.init(args=args)

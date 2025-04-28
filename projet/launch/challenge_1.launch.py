@@ -52,6 +52,5 @@ def generate_launch_description():
     ld.add_action(world)
     ld.add_action(lds_distance)
     ld.add_action(automatic_stop)
-    ld.add_action(contourne_obstacles)
 
     return ld
