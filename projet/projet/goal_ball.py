@@ -1,10 +1,13 @@
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image
-from geometry_msgs.msg import Twist
+import time
 from cv_bridge import CvBridge
 import cv2
 import numpy as np
+
+from sensor_msgs.msg import Image
+from std_msgs.msg import Float32MultiArray
+from geometry_msgs.msg import Twist
 
 import time
 
@@ -26,12 +29,15 @@ class GoalBall(Node):
         # Variables internes
         self.ball_detected = False
         self.ball_x = 0
+        self.ball_y = 0
         self.image_width = 0
+        self.image_height = 0
         self.front_distance = float('inf')  # distance devant le robot
         self.goal_detected = False
         self.contouring_ball = False  # Flag pour savoir si le robot doit contourner la balle
         self.pushing_ball = False  # Flag pour savoir si le robot est en train de pousser la balle
         self.start_time = None  # Moment où le robot commence à pousser la balle
+        self.push_distance_threshold = 100  # Seuil de distance en pixels pour démarrer la poussée
 
         self.get_logger().info("Noeud GoalBall lancé")
 
@@ -40,15 +46,20 @@ class GoalBall(Node):
         cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         hsv = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
 
-        # Détecter balle jaune
-        mask1 = cv2.inRange(hsv, np.array([20, 100, 100]), np.array([40, 255, 255]))  # Jaune clair
-        mask2 = cv2.inRange(hsv, np.array([15, 40, 40]), np.array([45, 255, 150]))    # Jaune foncé
+        # Détecter balle jaune avec une plage de couleurs plus stricte
+        mask1 = cv2.inRange(hsv, np.array([25, 150, 150]), np.array([35, 255, 255]))  # Jaune clair et saturé
+        mask2 = cv2.inRange(hsv, np.array([15, 100, 100]), np.array([45, 255, 200]))  # Jaune foncé mais plus contrôlé
         mask = cv2.bitwise_or(mask1, mask2)
 
+        # Appliquer un flou gaussien pour réduire le bruit
+        mask = cv2.GaussianBlur(mask, (5, 5), 0)
+
+        # Montrer les images pour le débogage
         cv2.imshow('Camera', cv_image)
         cv2.imshow('Mask Ball', mask)
         cv2.waitKey(1)
 
+        # Trouver les contours dans le masque filtré
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         if contours:
@@ -57,7 +68,9 @@ class GoalBall(Node):
             M = cv2.moments(c)
             if M['m00'] > 0:
                 self.ball_x = int(M['m10'] / M['m00'])
+                self.ball_y = int(M['m01'] / M['m00'])  # Coordonnée y de la balle
                 self.image_width = cv_image.shape[1]
+                self.image_height = cv_image.shape[0]
         else:
             self.ball_detected = False
 
@@ -79,11 +92,12 @@ class GoalBall(Node):
 
         # Si la balle est détectée
         if self.ball_detected:
-            center_x = self.image_width // 2
-            error = self.ball_x - center_x
+            center_y = self.image_height // 2  # Centre de l'image sur l'axe y
+            # Calcul de la "distance" approximative entre la balle et le robot en termes de y (hauteur de la balle dans l'image)
+            ball_distance = abs(center_y - self.ball_y)
 
-            # Si on commence à pousser la balle pendant 2 secondes vers la gauche
-            if not self.pushing_ball:
+            # Si la balle est proche du robot (dans la zone d'intérêt sur l'axe y)
+            if ball_distance < self.push_distance_threshold and not self.pushing_ball:
                 self.pushing_ball = True
                 self.start_time = time.time()
 

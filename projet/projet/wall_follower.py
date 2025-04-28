@@ -4,6 +4,8 @@ from std_msgs.msg import Float32MultiArray
 from geometry_msgs.msg import Twist
 import math
 
+from std_msgs.msg import Float32MultiArray
+
 class WallFollower(Node):
     def __init__(self):
         super().__init__('wall_follower')

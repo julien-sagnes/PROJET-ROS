@@ -26,16 +26,6 @@ def generate_launch_description():
         emulate_tty=True,
     )
 
-    # Arrêt automatique en cas d'obstacle
-    automatic_stop = Node(
-        package='projet',
-        executable='automatic_stop',
-        name='automatic_stop_node',
-        on_exit=launch.actions.Shutdown(),
-        output='screen',
-        emulate_tty=True,
-    )
-
 
     ld = LaunchDescription()
 
