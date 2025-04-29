@@ -11,13 +11,13 @@ class GoalBall(Node):
     def __init__(self):
         super().__init__('goal_ball')
 
-        # Parameters
-        self.declare_parameter('rotate_direction', 'left')  # left or right
+        # Paramètres
+        self.declare_parameter('rotate_direction', 'left')
         self.declare_parameter('linear_speed', 0.1)
-        self.declare_parameter('push_duration', 1.0)
-        self.declare_parameter('ball_reposition_distance', 0.85)
+        self.declare_parameter('push_duration', 0.0)
+        self.declare_parameter('ball_reposition_distance', 0.70)
         self.declare_parameter('stop_interval', 1.5)
-        self.declare_parameter('rotate_speed', 0.25)
+        self.declare_parameter('rotate_speed', 1.0)
 
         self.rotate_direction = self.get_parameter('rotate_direction').get_parameter_value().string_value
         self.linear_speed = self.get_parameter('linear_speed').get_parameter_value().double_value
@@ -26,14 +26,14 @@ class GoalBall(Node):
         self.stop_interval = self.get_parameter('stop_interval').get_parameter_value().double_value
         self.rotate_speed = self.get_parameter('rotate_speed').get_parameter_value().double_value
 
-        # Subscribers and publishers
+        # ROS
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.image_sub = self.create_subscription(Image, '/image_raw', self.image_callback, 10)
         self.scan_sub = self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
 
         self.bridge = CvBridge()
 
-        # Internal state
+        # État interne
         self.ball_detected = False
         self.ball_x = 0
         self.ball_y = 0
@@ -41,12 +41,13 @@ class GoalBall(Node):
         self.image_height = 0
 
         self.red_objects = []
-
         self.lidar_ranges = []
 
         self.state = 'SEARCH_BALL'
+        self.turning_phase = None
         self.push_start_time = None
-        self.rotation_last_stop_time = time.time()
+        self.rotation_start_time = None
+        self.orbit_start_time = None
 
         self.get_logger().info("Node GoalBall started")
 
@@ -132,51 +133,76 @@ class GoalBall(Node):
         if self.state == 'SEARCH_BALL':
             if self.ball_detected:
                 if self.ball_y > self.image_height * self.ball_reposition_distance:
-                    direction_text = "la gauche" if self.rotate_direction == "left" else "la droite"
-                    self.get_logger().info(f"Balle proche, on la pousse vers {direction_text}")
+                    self.get_logger().warn("Balle proche, préparation à la poussée.")
                     self.push_start_time = now
                     self.state = 'PUSH_BALL'
                 else:
                     twist.linear.x = self.linear_speed
                     center_x = self.image_width // 2
                     offset_x = self.ball_x - center_x
-                    twist.angular.z = -0.002 * offset_x  # Coefficient à ajuster selon réactivité
-                    self.get_logger().info("Balle détectée mais trop loin, on s'en approche")
+                    twist.angular.z = -0.002 * offset_x
+                    self.get_logger().info("Balle détéctée, on s'en approche")
             else:
                 twist.angular.z = 0.2
 
         elif self.state == 'PUSH_BALL':
             if now - self.push_start_time < self.push_duration:
-                direction_text = "la gauche" if self.rotate_direction == "left" else "la droite"
-                self.get_logger().info(f"On la pousse vers {direction_text}")
                 twist.linear.x = self.linear_speed * 0.5
                 twist.angular.z = 0.2 if self.rotate_direction == 'left' else -0.2
             else:
-                self.get_logger().info("Fin de poussée, repositionnement autour de la balle")
+                self.get_logger().warn("Poussée terminée, passage à TURNING_BALL.")
                 self.state = 'TURNING_BALL'
-                self.rotation_last_stop_time = now
+                self.turning_phase = 'REPOSITION_FRONT'
 
         elif self.state == 'TURNING_BALL':
-            if now - self.rotation_last_stop_time > self.stop_interval:
-                self.rotation_last_stop_time = now
-                if self.ball_centered() and self.goal_centered():
-                    self.get_logger().info("Alignement parfait : balle + but centrés, tir !")
-                    self.state = 'SHOOT'
-                    self.push_start_time = now
+            if self.turning_phase == 'REPOSITION_FRONT':
+                if self.ball_detected and self.ball_y < self.image_height * self.ball_reposition_distance:
+                    twist.linear.x = self.linear_speed
+                    center_x = self.image_width // 2
+                    offset_x = self.ball_x - center_x
+                    twist.angular.z = -0.002 * offset_x
+                # IL FAUDRAIT RECULER, SI LA BALLE EST TROP PROCHE DU ROBOT (si self.ball_y > self.image_height * self.ball_reposition_distance)
                 else:
-                    self.get_logger().info("Pause : alignement incomplet (balle ou but)")
-                    twist.linear.x = 0.0
-                    twist.angular.z = 0.0
-            else:
-                twist.linear.x = self.linear_speed
-                twist.angular.z = self.rotate_speed if self.rotate_direction == 'left' else -self.rotate_speed
+                    self.get_logger().info("Repositionnement terminé. Rotation initiale.")
+                    self.turning_phase = 'ROTATE_90'
+                    self.rotation_start_time = now
+
+            elif self.turning_phase == 'ROTATE_90':
+                if now - self.rotation_start_time < 5.0:    # Temps de rotation
+                    twist.angular.z = self.rotate_speed if self.rotate_direction == 'left' else -self.rotate_speed
+                else:
+                    self.get_logger().info("Fin de la rotation. Début de l'orbite.")
+                    self.turning_phase = 'ORBIT'
+                    self.orbit_start_time = now
+
+            elif self.turning_phase == 'ORBIT':
+                if now - self.orbit_start_time < 2.0:   # On regarde la balle toutes les 2 secondes
+                    twist.linear.x = self.linear_speed * 0.7
+                    twist.angular.z = self.rotate_speed * 0.5 if self.rotate_direction == 'left' else -self.rotate_speed * 0.5
+                else:
+                    self.get_logger().info("Fin orbite, on regarde la balle.")
+                    self.turning_phase = 'CHECK_ALIGNMENT'
+                    self.rotation_start_time = now
+
+            elif self.turning_phase == 'CHECK_ALIGNMENT':
+                # PLUTOT QUE LE TEMPS, IL FAUDRAIT TOURNER TANT QUE LA BALLE N'EST PAS AU CENTRE DE L'IMAGE
+                if now - self.rotation_start_time < 5.0:
+                    twist.angular.z = -self.rotate_speed if self.rotate_direction == 'left' else self.rotate_speed
+                else:
+                    if self.ball_centered() and self.goal_centered():
+                        self.get_logger().warn("Alignement balle-but trouvé. Tir !")
+                        self.state = 'SHOOT'
+                        self.push_start_time = now
+                    else:
+                        self.get_logger().info("Alignement non optimal. Recommence orbite après repositionnement.")
+                        self.turning_phase = 'REPOSITION_FRONT'
+                        self.orbit_start_time = now
 
         elif self.state == 'SHOOT':
             if now - self.push_start_time < 2.0:
                 twist.linear.x = self.linear_speed * 1.5
-                twist.angular.z = 0.0
             else:
-                self.get_logger().info("Tir terminé, arrêt du robot")
+                self.get_logger().info("Tir terminé.")
                 self.state = 'STOP'
 
         else:  # STOP
