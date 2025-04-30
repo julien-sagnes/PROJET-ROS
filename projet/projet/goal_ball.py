@@ -5,6 +5,7 @@ from geometry_msgs.msg import Twist
 from cv_bridge import CvBridge
 import numpy as np
 import cv2
+import math
 import time
 
 class GoalBall(Node):
@@ -15,7 +16,7 @@ class GoalBall(Node):
         self.declare_parameter('rotate_direction', 'left')
         self.declare_parameter('linear_speed', 0.1)
         self.declare_parameter('push_duration', 0.0)
-        self.declare_parameter('ball_reposition_distance', 0.70)
+        self.declare_parameter('ball_reposition_distance', 0.55)
         self.declare_parameter('stop_interval', 1.5)
         self.declare_parameter('rotate_speed', 1.0)
 
@@ -29,7 +30,6 @@ class GoalBall(Node):
         # ROS
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.image_sub = self.create_subscription(Image, '/image_raw', self.image_callback, 10)
-        self.scan_sub = self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
 
         self.bridge = CvBridge()
 
@@ -48,6 +48,14 @@ class GoalBall(Node):
         self.push_start_time = None
         self.rotation_start_time = None
         self.orbit_start_time = None
+
+        # Orbite de la balle
+        coef = 6 # facteur empirique constaté pour la rotation à 90
+        self.rotation_duration = (math.pi / 2) / self.rotate_speed * coef  # Durée théorique pour effectuer 90°
+        self.orbit_angle = math.pi / 3  # 60°
+        self.orbit_linear_speed = 0.1  # m/s
+        self.orbit_angular_speed = self.orbit_linear_speed / self.ball_reposition_distance * coef
+        self.orbit_duration = self.orbit_angle / self.orbit_angular_speed * coef
 
         self.get_logger().info("Node GoalBall started")
 
@@ -98,8 +106,11 @@ class GoalBall(Node):
                 cx = int(M['m10'] / M['m00'])
                 self.red_objects.append(cx)
 
-    def scan_callback(self, msg):
-        self.lidar_ranges = list(msg.ranges)
+        if len(self.red_objects) >= 2:
+            self.red_objects.sort()
+            self.goal_x = (self.red_objects[0] + self.red_objects[-1]) // 2
+        else:
+            self.goal_x = None
 
     def goal_centered(self):
         if len(self.red_objects) >= 2:
@@ -108,7 +119,8 @@ class GoalBall(Node):
             right = self.red_objects[-1]
             goal_center = (left + right) // 2
             image_center = self.image_width // 2
-            return abs(goal_center - image_center) < self.image_width * 0.1
+            tolerance = self.image_width * 0.05  # 10 % de la largeur
+            return abs(goal_center - image_center) < tolerance
         return False
     
     def goal_alignment_offset(self):
@@ -124,7 +136,7 @@ class GoalBall(Node):
         if not self.ball_detected:
             return False
         center_x = self.image_width // 2
-        return abs(self.ball_x - center_x) < self.image_width * 0.1
+        return abs(self.ball_x - center_x) < self.image_width * 0.1 # Le centre du but est dans les 10 % du centre de l'image
 
     def control_loop(self):
         twist = Twist()
@@ -141,14 +153,19 @@ class GoalBall(Node):
                     center_x = self.image_width // 2
                     offset_x = self.ball_x - center_x
                     twist.angular.z = -0.002 * offset_x
-                    self.get_logger().info("Balle détéctée, on s'en approche")
+                    self.get_logger().info("Balle détéctée, on s'en approche.")
             else:
-                twist.angular.z = 0.2
+                twist.angular.z = -self.rotate_speed
+                self.get_logger().info("Balle introuvable, on la recherche en tournant")
 
         elif self.state == 'PUSH_BALL':
             if now - self.push_start_time < self.push_duration:
                 twist.linear.x = self.linear_speed * 0.5
                 twist.angular.z = 0.2 if self.rotate_direction == 'left' else -0.2
+            if self.goal_centered() and self.ball_centered():
+                self.get_logger().warn("Alignement balle-but déjà parfait. On passe au tir !")
+                self.state = 'SHOOT'
+                self.push_start_time = time.time()
             else:
                 self.get_logger().warn("Poussée terminée, passage à TURNING_BALL.")
                 self.state = 'TURNING_BALL'
@@ -156,19 +173,20 @@ class GoalBall(Node):
 
         elif self.state == 'TURNING_BALL':
             if self.turning_phase == 'REPOSITION_FRONT':
-                if self.ball_detected and self.ball_y < self.image_height * self.ball_reposition_distance:
-                    twist.linear.x = self.linear_speed
+                # Si trop proche : on recule
+                if self.ball_detected and self.ball_y > self.image_height * self.ball_reposition_distance:
+                    twist.linear.x = - self.linear_speed * 0.5
                     center_x = self.image_width // 2
                     offset_x = self.ball_x - center_x
                     twist.angular.z = -0.002 * offset_x
-                # IL FAUDRAIT RECULER, SI LA BALLE EST TROP PROCHE DU ROBOT (si self.ball_y > self.image_height * self.ball_reposition_distance)
                 else:
                     self.get_logger().info("Repositionnement terminé. Rotation initiale.")
                     self.turning_phase = 'ROTATE_90'
                     self.rotation_start_time = now
 
             elif self.turning_phase == 'ROTATE_90':
-                if now - self.rotation_start_time < 5.0:    # Temps de rotation
+                if now - self.rotation_start_time < self.rotation_duration:
+                    self.get_logger().info(f"Tourner durant {now - self.rotation_start_time} / {self.rotation_duration}.")
                     twist.angular.z = self.rotate_speed if self.rotate_direction == 'left' else -self.rotate_speed
                 else:
                     self.get_logger().info("Fin de la rotation. Début de l'orbite.")
@@ -176,40 +194,74 @@ class GoalBall(Node):
                     self.orbit_start_time = now
 
             elif self.turning_phase == 'ORBIT':
-                if now - self.orbit_start_time < 2.0:   # On regarde la balle toutes les 2 secondes
-                    twist.linear.x = self.linear_speed * 0.7
-                    twist.angular.z = self.rotate_speed * 0.5 if self.rotate_direction == 'left' else -self.rotate_speed * 0.5
+                if now - self.orbit_start_time < self.orbit_duration:
+                    self.get_logger().info(f"Orbite durant {now - self.orbit_start_time} / {self.orbit_duration}.")
+                    twist.linear.x = self.orbit_linear_speed
+                    twist.angular.z = -self.orbit_angular_speed if self.rotate_direction == 'left' else self.orbit_angular_speed
                 else:
-                    self.get_logger().info("Fin orbite, on regarde la balle.")
+                    self.get_logger().info("Pause orbite, on regarde la balle.")
                     self.turning_phase = 'CHECK_ALIGNMENT'
                     self.rotation_start_time = now
 
             elif self.turning_phase == 'CHECK_ALIGNMENT':
-                # PLUTOT QUE LE TEMPS, IL FAUDRAIT TOURNER TANT QUE LA BALLE N'EST PAS AU CENTRE DE L'IMAGE
-                if now - self.rotation_start_time < 5.0:
-                    twist.angular.z = -self.rotate_speed if self.rotate_direction == 'left' else self.rotate_speed
+                # 1) Phase de rotation pour centrer la balle
+                if not self.ball_detected or not self.ball_centered():
+                    # On tourne purement (pas de linéaire) jusqu'à centrer la balle
+                    twist.linear.x = 0.0
+                    twist.angular.z = -self.rotate_speed if self.rotate_direction == "left" else -self.rotate_speed
+                    self.get_logger().info("CHECK_ALIGNMENT: rotation pour centrer la balle")
                 else:
-                    if self.ball_centered() and self.goal_centered():
-                        self.get_logger().warn("Alignement balle-but trouvé. Tir !")
-                        self.state = 'SHOOT'
-                        self.push_start_time = now
-                    else:
-                        self.get_logger().info("Alignement non optimal. Recommence orbite après repositionnement.")
+                    # 2) Balle centrée, on regarde le but
+                    if self.goal_x is None:
+                        # Si but non détecté, on relance une orbite complète
+                        self.get_logger().info("CHECK_ALIGNMENT: but perdu, reprise orbite")
                         self.turning_phase = 'REPOSITION_FRONT'
-                        self.orbit_start_time = now
+                        self.orbit_start_time = time.time()
+                        twist.linear.x = 0.0
+                        twist.angular.z = 0.0
+                    elif abs(self.goal_x - self.image_width // 2) > self.image_width * 0.2:
+                        # But détecté mais pas centré → avance + correction
+                        error = self.goal_x - (self.image_width // 2)
+                        twist.linear.x = self.linear_speed
+                        twist.angular.z = -0.002 * error
+                        self.get_logger().info(f"CHECK_ALIGNMENT: avance+corrige pour centrer but (err={error})")
+                    else:
+                        # Balle et but centrés → passage au tir
+                        self.get_logger().warn("Alignement atteint: balle et but centrés. On passe au tir")
+                        self.state = 'SHOOT'
+                        self.push_start_time = time.time()
 
         elif self.state == 'SHOOT':
-            if now - self.push_start_time < 2.0:
-                twist.linear.x = self.linear_speed * 1.5
+            # Si on voit deux poteaux rouges
+            if len(self.red_objects) >= 2:
+                # Calcul de l'écart en pixels
+                self.red_objects.sort()
+                post_width_px = abs(self.red_objects[-1] - self.red_objects[0])
+                target_width = self.image_width * 0.95
+
+                self.get_logger().info(
+                    f"SHOOT : distance but = {post_width_px}px / seuil = {target_width:.0f}px"
+                )
+                # Tant que le but n'est pas assez "large" dans l'image, on avance
+                if post_width_px < target_width:
+                    twist.linear.x = self.linear_speed * 1.5
+                    twist.angular.z = 0.0
+                    self.get_logger().info("SHOOT : en approche du but.")
+                else:
+                    self.get_logger().info("SHOOT : but atteint visuellement, arrêt.")
+                    self.state = 'STOP'
             else:
-                self.get_logger().info("Tir terminé.")
-                self.state = 'STOP'
+                # Si les poteaux ne sont plus visibles (éventuelle occlusion), on avance prudemment
+                twist.linear.x = self.linear_speed * 0.5
+                twist.angular.z = 0.0
+                self.get_logger().warn("SHOOT : poteaux perdus, avance prudente.")
 
         else:  # STOP
             twist.linear.x = 0.0
             twist.angular.z = 0.0
 
         self.cmd_pub.publish(twist)
+
 
     def timer_callback(self):
         self.control_loop()
