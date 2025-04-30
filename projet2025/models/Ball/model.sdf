@@ -2,7 +2,7 @@
 
     <model name="Ball">
       <link name="Ball">
-            <pose>0.277 -0.375 0.3 0 -0 0</pose>
+            <pose>0.241 -0.326 0.3 0 -0 0</pose>
             <self_collide>0</self_collide>
             <kinematic>1</kinematic>
             <inertial>
