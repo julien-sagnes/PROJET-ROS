@@ -31,13 +31,13 @@ class WallFollower(Node):
         self.right_dist = float('inf')
 
         # PID
-        self.kp = 6.0
+        self.kp = 7.0
         self.ki = 0.5
         self.kd = 1.0
         self.last_error = 0.0
         self.integral = 0.0
         self.last_time = self.get_clock().now().nanoseconds / 1e9
-        self.coef = 1
+        self.coef = 1.0
 
         self.get_logger().info("Wall follower node started.")
 
@@ -56,13 +56,12 @@ class WallFollower(Node):
         dt = max(dt, 1e-4)  # éviter division par 0
 
         # Retour en ligne droite (réinitialisation du PID progressif)
-        if self.front_dist > 1.0 or math.isinf(self.front_dist):
-            self.coef -= 0.07   # à modifier avec test sur robot réel
+        if math.isinf(self.front_dist):
+            self.coef -= 0.007   # à modifier avec test sur robot réel
+            self.kp = 1.0       # Baisse du PID
             self.get_logger().warn("Détection de ligne droite.")
+            self.get_logger().info(f"ki * integral = {self.ki * self.integral}")
             self.integral *= self.coef
-            if self.integral < 0:
-                self.integral = 0
-                self.coef = 1
 
         # Virage à gauche
         if any(d in [float('inf'), float('-inf')] for d in [self.left_dist]) or self.left_dist > 0.2:
@@ -86,6 +85,7 @@ class WallFollower(Node):
                 self.ki * self.integral +
                 self.kd * derivative
             )
+            self.get_logger().info(f"ki * integral = {self.ki * self.integral}")
 
             twist.linear.x = self.linear_speed
             twist.angular.z = correction
