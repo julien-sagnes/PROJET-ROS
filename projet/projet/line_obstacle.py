@@ -54,7 +54,7 @@ class LineFollowerWithObstacle(Node):
 
         # Détection d'obstacle via moment du masque bleu
         M_blue = cv2.moments(blue_mask)
-        obstacle_detected = M_blue["m00"] > 1000  # seuil à ajuster
+        obstacle_detected = M_blue["m00"] > 500  # seuil à ajuster
         cx_blue = int(M_blue["m10"] / M_blue["m00"]) if obstacle_detected else None
 
         twist = Twist()
@@ -76,11 +76,11 @@ class LineFollowerWithObstacle(Node):
             elif cx_green is not None:  # Si on ne voit que la ligne verte
                 self.get_logger().info(f"Green only : to the right...")  
                 twist.linear.x = self.linear_speed
-                twist.angular.z = -0.5  # Tourner à gauche pour rattraper la rouge
+                twist.angular.z = -0.8  # Tourner à gauche pour rattraper la rouge
             elif cx_red is not None:  # Si on ne voit que la ligne rouge
                 self.get_logger().info(f"Red only : to the left...")  
                 twist.linear.x = self.linear_speed
-                twist.angular.z = 0.5  # Tourner à droite pour rattraper la verte
+                twist.angular.z = 0.8  # Tourner à droite pour rattraper la verte
 
             else:
                 self.get_logger().info(f"Line lost : STOP") 
@@ -90,14 +90,14 @@ class LineFollowerWithObstacle(Node):
         elif self.state == 'AVOID_OBSTACLE':
             elapsed = (self.get_clock().now() - self.avoid_start_time).nanoseconds / 1e9
 
-            if elapsed < 10.0:
+            if elapsed < 5.0:
                 # Phase 1: déviation dans le sens opposé pour s'éloigner un peu
-                twist.linear.x = self.linear_speed * 0.7
-                twist.angular.z = 0.5 if self.avoid_direction == 'left' else -0.5
-            elif elapsed < 20.0:
+                twist.linear.x = self.linear_speed
+                twist.angular.z = 0.8 if self.avoid_direction == 'left' else -0.8
+            elif elapsed < 12.0:
                 # Phase 2: contournement dans la bonne direction
-                twist.linear.x = self.linear_speed * 0.7
-                twist.angular.z = -0.5 if self.avoid_direction == 'left' else 0.5
+                twist.linear.x = self.linear_speed 
+                twist.angular.z = -0.8 if self.avoid_direction == 'left' else 0.8
             else:
                 self.state = 'FOLLOW_LINE'
                 self.return_start_time = self.get_clock().now()
