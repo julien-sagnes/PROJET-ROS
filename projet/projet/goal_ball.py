@@ -48,7 +48,7 @@ class GoalBall(Node):
         self.rotation_start_time = None
         self.orbit_start_time = None
 
-        # Orbite de la balle
+        # Orbite de la balle (PAS OPTIMAL)
         coef = 6 # facteur empirique constaté pour la rotation à 90
         self.rotation_duration = (math.pi / 2) / self.rotate_speed * coef  # Durée théorique pour effectuer 90°
         self.orbit_angle = math.pi / 3 * coef  # 60°
@@ -131,35 +131,54 @@ class GoalBall(Node):
 
         if self.goal_x is not None:
             # Affiche un cercle au centre du but
-            cv2.circle(cv_image, (self.goal_x, self.image_height // 3), 10, (255, 255, 255), -1) 
-            # Affiche une ligne verticale au centre de l'image pour référence
-            cv2.line(cv_image, (self.image_width // 2, 0), (self.image_width // 2, self.image_height), (255, 0, 0), 2)  # bleu
+            cv2.circle(cv_image, (self.goal_x, self.image_height // 3), 10, (0, 0, 255), -1) 
             # Affiche une ligne verticale à goal_x
-            cv2.line(cv_image, (self.goal_x, 0), (self.goal_x, self.image_height), (255, 255, 255), 2)
+            cv2.line(cv_image, (self.goal_x, 0), (self.goal_x, self.image_height), (0, 0, 255), 2)
+            # Affiche un cercle au centre de la balle
+            cv2.circle(cv_image, (self.ball_x, self.image_height // 3), 10, (0, 255, 255), -1) 
+            # Affiche une ligne verticale à ball_x
+            cv2.line(cv_image, (self.ball_x, 0), (self.ball_x, self.image_height), (0, 255, 255), 2)  
+            # Affiche une ligne verticale au centre de l'image pour référence
+            cv2.line(cv_image, (self.image_width // 2, 0), (self.image_width // 2, self.image_height), (0, 0, 0), 2)  # bleu
 
         cv2.imshow("Goal Visualization", cv_image)
 
     def goal_centered(self):
         if self.goal_x is not None:
-            image_center = self.image_width // 2
-            tolerance = self.image_width * 0.4  # 40% de tolérance
-            self.get_logger().info(f"diff = {self.goal_x - image_center}")
-            self.get_logger().info(f"tolerance = {tolerance}")
-            return abs(self.goal_x - image_center) < tolerance
-        return False
+            center_x = self.image_width // 2
 
-    def goal_alignment_offset(self):
-        """Retourne la différence entre le centre de l’image et le centre du but (si visible)."""
-        if self.goal_x is not None:
-            image_center = self.image_width // 2
-            return self.goal_x - image_center
-        return None
+            # Si les deux poteaux sont détectés, on ajuste dynamiquement la tolérance
+            if self.goal_left_edge is not None and self.goal_right_edge is not None:
+                goal_width_px = abs(self.goal_right_edge - self.goal_left_edge)
+                relative_width = goal_width_px / self.image_width  # entre 0.0 et 1.0
+
+                # La tolérance est plus faible quand le but paraît étroit
+                # Exemple : pour un but très large → tolérance jusqu'à 25%, très étroit → tolérance jusqu'à 10%
+                tolerance = self.image_width * (0.1 + 0.15 * relative_width)
+            else:
+                # Cas sans info : tolérance classique
+                tolerance = self.image_width * 0.25
+
+            self.get_logger().warn(f"diff_goal = {self.goal_x - center_x}")
+            self.get_logger().warn(f"tolerance = {tolerance}")
+            return abs(self.goal_x - center_x) < tolerance
+        return False
 
     def ball_centered(self):
         if not self.ball_detected:
             return False
         center_x = self.image_width // 2
-        return abs(self.ball_x - center_x) < self.image_width * 0.1 # Le centre du but est dans les 10 % du centre de l'image
+
+        ####
+        if self.goal_centered and self.ball_centered:
+            temp = 1
+        else:
+            temp = 0
+        self.get_logger().warn(f"diff_ball = {abs(self.ball_x - center_x)}")
+        self.get_logger().warn(f"goal + ball = {temp}")
+        ####
+
+        return abs(self.ball_x - center_x) < self.image_width * 0.1 # 20% de tolérance
 
     def control_loop(self):
         twist = Twist()
@@ -230,7 +249,7 @@ class GoalBall(Node):
                 if not self.ball_detected or not self.ball_centered():
                     # On tourne purement (pas de linéaire) jusqu'à centrer la balle
                     twist.linear.x = 0.0
-                    twist.angular.z = -self.rotate_speed if self.rotate_direction == "left" else -self.rotate_speed
+                    twist.angular.z = -self.rotate_speed if self.rotate_direction == "left" else self.rotate_speed
                     self.get_logger().info("CHECK_ALIGNMENT: rotation pour centrer la balle")
                 else:
                     # 2) Balle centrée, on regarde le but
@@ -241,7 +260,8 @@ class GoalBall(Node):
                         self.orbit_start_time = time.time()
                         twist.linear.x = 0.0
                         twist.angular.z = 0.0
-                    elif abs(self.goal_x - self.image_width // 2) > self.image_width * 0.4:
+                    elif not self.goal_centered():
+                        # Si but détécté mais pas centré
                         # But détecté mais pas centré → avance + correction
                         error = self.goal_x - (self.image_width // 2)
                         twist.linear.x = self.linear_speed
@@ -270,11 +290,10 @@ class GoalBall(Node):
                     self.get_logger().info("SHOOT : but atteint visuellement, arrêt.")
                     self.state = 'STOP'
             else:
-                # Si les poteaux ne sont plus visibles (éventuelle occlusion), on avance prudemment
-                twist.linear.x = self.linear_speed * 0.5
+                # Si les poteaux ne sont plus visibles (éventuelle occlusion), on avance
+                twist.linear.x = self.linear_speed
                 twist.angular.z = 0.0
-                self.get_logger().warn("SHOOT : poteaux perdus, retour à SEARCH_BALL.")
-                self.state = "SEARCH_BALL"
+                self.get_logger().warn("SHOOT : poteaux perdus")
 
         self.cmd_pub.publish(twist)
 
