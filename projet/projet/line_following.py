@@ -21,8 +21,8 @@ class LineFollowingNode(Node):
         self.declare_parameter('linear_scale',0.07)
         self.linear_scale = self.get_parameter('linear_scale').get_parameter_value().double_value
         # Choix du côté du rond-point (True : à droite, False : à gauche)
-        self.declare_parameter('side',True)
-        self.passage_a_droite = self.get_parameter('side').get_parameter_value().string_value
+        self.passage_a_droite = Bool()
+        self.passage_a_droite = False
         # Choix entre simulation et réel
         self.declare_parameter('interface','/image_raw') #RAJOUTER /camera/image_raw/compressed si on veut interfacer
         self.interface = self.get_parameter('interface').get_parameter_value().string_value
@@ -66,10 +66,11 @@ class LineFollowingNode(Node):
     # Fonction qui prend l'information s'il y a un obstacle
     def stop_callback(self, msg):
         self.stop_running = msg
+        self.get_logger().info(f'message STOP_CALLBACK = {msg.data}')
         
     # Fonction qui est appelée à chaque fois qu'une nouvelle image est reçue
     def image_callback(self, img_msg):
-        if not self.stop_running:
+        if not self.stop_running.data:
             # conversion de l'image en OpenCV
             if self.interface == '/image_raw':
                 img = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding='bgr8')
@@ -81,8 +82,8 @@ class LineFollowingNode(Node):
             height, width, _ = img.shape
             # définition de la "region of interest" du champ de vision de la camera
             # Pour éviter d'etre parasité par les autres obstacles qui sont formés de lignes rouges
-            roi = img[height // 4:, :] # On ignore le quart inférieur
-
+            roi = img[height // 5:, :] # On ignore le cinquieme superieur
+            h_roi, w_roi, _ = roi.shape
             # Conversion de RGB en HSV (meilleurs pour la détection des couleurs)
             hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
 
@@ -140,69 +141,63 @@ class LineFollowingNode(Node):
                     cx_center = (cx_green+cx_red)//2
                     cy_center = (cy_green + cy_red)//2
 
-                    self.get_logger().info(f'1. cx_green = {cx_green}, cy_green = {cy_green}')
-                    self.get_logger().info(f'1. cx_red = {cx_red}, cy_red = {cy_red}')
+                    self.get_logger().info(f'VERT ET ROUGE')
                     cv2.circle(roi, (cx_green, cy_green), 5, (0, 255, 0), -1)  # cercle vert
                     cv2.circle(roi, (cx_red, cy_red), 5, (0, 0, 255), -1)  # cercle rouge 
                     cv2.circle(roi, (cx_center, cy_center), 5, (35, 255, 255), -1) # cercle bleu
                     print (f'cx_red = {cx_red} , cy_red = {cy_red}')
                     print (f'cx_green = {cx_green} , cy_green = {cy_green}')
                     print (f'center_x = {cx_center} , center_y = {cy_center}')
+                    print (f'dimensions du ROI = {roi.shape}')
                 
                     if cx_green < cx_red :
-                        if cx_center < 320 and cy_center < 150 and cy_green > 300 : # virage à gauche
+                        if cx_green < 95 and cy_green < 40 : # virage à gauche
 
-                            self.get_logger().info(f'virage à gauche en approche !')
+                            self.get_logger().info(f'Il faut encore tourner à gauche !  V et R')
                             # Commandes de mouvement: le robot avance avec une vitesse linéaire et tourne selon l'erreur calculée (PID)
                             twist = Twist()
-                            twist.linear.x = 0.03 # on maintient une vitesse réduite
-                            twist.angular.z = 0.5
-                            self.cmd_vel_publisher.publish(twist)
-
-                        elif cx_red > 480 and cy_red > 255 and cx_green < 160 and cy_green < 85 :
-                            self.get_logger().info(f'virage à droite !!')
-                            twist = Twist()
-                            twist.linear.x = 0.01 # on maintient une vitesse réduite
-                            twist.angular.z = 0.5
-                            self.cmd_vel_publisher.publish(twist)
-
-
-                        elif cx_center >0 and cy_center < 170 and cx_red > 320 and cy_red < 300 and cx_green < 150 and cy_green < 110 :
-                            self.get_logger().info(f'Je vois du vert en haut à gauche')
-                            twist = Twist()
                             twist.linear.x = 0.05 # on maintient une vitesse réduite
                             twist.angular.z = 0.5
                             self.cmd_vel_publisher.publish(twist)
 
-                        elif cx_center >0 and cy_center < 170 and cx_red > 320 and cy_red < 300 and cx_green > 150 and cy_green > 110 :
-                            self.get_logger().info(f'On arrive au rond point')
+                        elif cx_green > 80 and cy_green > 79 and cx_red > 150 and cy_red < 50 :
+                            self.get_logger().info(f'Il faut encore tourner à DROITE !  V et R')
+                            # Commandes de mouvement: le robot avance avec une vitesse linéaire et tourne selon l'erreur calculée (PID)
                             twist = Twist()
                             twist.linear.x = 0.05 # on maintient une vitesse réduite
-                            twist.angular.z = -0.9
+                            twist.angular.z = -0.5
                             self.cmd_vel_publisher.publish(twist)
                         
                         else :
-                            self.get_logger().info("2 couleurs détéctées")
+                            self.get_logger().info("Tout droit !!! V et R")
                             twist = Twist()
                             twist.linear.x = self.linear_scale # on maintient la vitesse en ligne droite
                             twist.angular.z = 0.0
                             self.cmd_vel_publisher.publish(twist)
 
                     if cx_red < cx_green :
-                        self.get_logger().info("On est au rond-point, je vais où ?")
-                        if cy_green > 120 :
+                        self.get_logger().info("INVERSION COULEURS")
+
+                        if cy_red > 200:
+                            self.get_logger().info("Il faut encore tourner à droite ! V et R")
+                            twist = Twist()
+                            twist.linear.x = 0.05 # on maintient la vitesse en ligne droite
+                            twist.angular.z = -0.3
+                            self.cmd_vel_publisher.publish(twist)
+
+                        if cy_green > 115 :
                             if self.passage_a_droite :
                                 self.get_logger().info("JE PASSE A DROITE !!!")
                                 twist = Twist()
-                                twist.linear.x = 0.02 # on maintient la vitesse en ligne droite
-                                twist.angular.z = 0.5
+                                twist.linear.x = 0.05 # on maintient la vitesse en ligne droite
+                                twist.angular.z = -0.6
                                 self.cmd_vel_publisher.publish(twist)
                             
                             else :
                                 self.get_logger().info("JE PASSE A GAUCHE !!!")
                                 twist = Twist()
-                                twist.linear.x = 0.02 # on maintient la vitesse en ligne droite
-                                twist.angular.z = -0.5
+                                twist.linear.x = 0.05 # on maintient la vitesse en ligne droite
+                                twist.angular.z = 0.5
                                 self.cmd_vel_publisher.publish(twist)
 
                     
@@ -211,7 +206,7 @@ class LineFollowingNode(Node):
 
             elif contours_green and not contours_red:
                 # Ligne verte seulement -> tourne vers la droite
-                self.get_logger().info(f'Virage à droite à venir VERT ONLYY!')
+                self.get_logger().info(f'VERT ONLYY!')
                 M_green = cv2.moments(contours_green[0])
                 
                 if M_green["m00"] != 0:
@@ -220,17 +215,17 @@ class LineFollowingNode(Node):
                     cv2.circle(roi, (cx_green, cy_green), 5, (0, 255, 0), -1)  # cercle vert
                     self.get_logger().info(f'2. cx_green = {cx_green}, cy_green = {cy_green}')
 
-                    if cx_green > 100 and cy_green > 170 :  # Quand trop près de la ligne
+                    if cx_green > 100 and cy_green > 130:  # Quand trop près de la ligne
                         self.get_logger().info(f'Tourne vers la droite VERT ONLY')
                         twist = Twist()
-                        twist.linear.x = 0.03
-                        twist.angular.z = -0.55
+                        twist.linear.x = 0.05
+                        twist.angular.z = -0.5
                         self.cmd_vel_publisher.publish(twist)
 
                     
 
-                else :
-                        self.get_logger().info("on continue quand meme VERT ONLY!!")
+                    else :
+                        self.get_logger().info("Tout droit VERT ONLY!!")
                         twist = Twist()
                         twist.linear.x = self.linear_scale# on maintient la vitesse en ligne droite
                         twist.angular.z = 0.0
@@ -238,7 +233,7 @@ class LineFollowingNode(Node):
 
             elif contours_red and not contours_green:
                 # Ligne rouge seulement -> tourne vers la gauche
-                self.get_logger().info(f'Virage serré à gauche! ROUGE ONLY!!!')
+                self.get_logger().info(f'ROUGE ONLY!!!')
                 M_red = cv2.moments(contours_red[0])
                 
                 #while cx_red 
@@ -249,15 +244,22 @@ class LineFollowingNode(Node):
                     cv2.circle(roi, (cx_red, cy_red), 5, (0, 0, 255), -1)  # cercle rouge
                     self.get_logger().info(f'2. cx_red = {cx_red}, cy_red = {cy_red}')
 
-                    if cx_red < 400 and cy_red < 300 :
+                    if cx_red < 230 and cy_red > 130 :
                         self.get_logger().info(f'Il faut tourner à gauche ROUGE ONLY!!')
                         twist = Twist()
-                        twist.linear.x = 0.02
-                        twist.angular.z = 0.2
+                        twist.linear.x = 0.05
+                        twist.angular.z = 0.3
+                        self.cmd_vel_publisher.publish(twist)
+
+                    elif cy_red > 200 :
+                        self.get_logger().info(f'OULA FAUT TOURNER ROUGE ONLY!!')
+                        twist = Twist()
+                        twist.linear.x = 0.05
+                        twist.angular.z = 0.0
                         self.cmd_vel_publisher.publish(twist)
                 
-                else :
-                        self.get_logger().info("on continue quand meme ROUGE ONLY!!")
+                    else :
+                        self.get_logger().info("Tout droit ROUGE ONLY!!")
                         twist = Twist()
                         twist.linear.x = self.linear_scale# on maintient la vitesse en ligne droite
                         twist.angular.z = 0.0
@@ -274,9 +276,10 @@ class LineFollowingNode(Node):
             
             #cv2.imshow('Red Mask', mask_red_clean)
             #cv2.imshow('Green Mask', mask_green_clean)
-            cv2.imshow('ROI', roi)
+            
             cv2.imshow('Red Mask (raw)', mask_red)
             cv2.imshow('Green Mask (raw)', mask_green)
+            cv2.imshow('ROI', roi)
             cv2.waitKey(1)
         
         else:
