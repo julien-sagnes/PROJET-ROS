@@ -40,7 +40,6 @@ class GoalBall(Node):
         self.image_width = 0
         self.image_height = 0
 
-        self.red_objects = []
         self.lidar_ranges = []
 
         self.state = 'SEARCH_BALL'
@@ -52,10 +51,10 @@ class GoalBall(Node):
         # Orbite de la balle
         coef = 6 # facteur empirique constaté pour la rotation à 90
         self.rotation_duration = (math.pi / 2) / self.rotate_speed * coef  # Durée théorique pour effectuer 90°
-        self.orbit_angle = math.pi / 3  # 60°
+        self.orbit_angle = math.pi / 3 * coef  # 60°
         self.orbit_linear_speed = 0.1  # m/s
         self.orbit_angular_speed = self.orbit_linear_speed / self.ball_reposition_distance * coef
-        self.orbit_duration = self.orbit_angle / self.orbit_angular_speed * coef
+        self.orbit_duration = self.orbit_angle / self.orbit_angular_speed
 
         self.get_logger().info("Node GoalBall started")
 
@@ -78,6 +77,10 @@ class GoalBall(Node):
         lower_red2 = np.array([160, 100, 100])
         upper_red2 = np.array([180, 255, 255])
         red_mask = cv2.inRange(hsv, lower_red1, upper_red1) | cv2.inRange(hsv, lower_red2, upper_red2)
+        # Masking lower part of the image to ignore red lines on the floor
+        height_mask = int(self.image_height * 0.6)  # Ajuster selon besoin, ici on garde seulement le haut 60%
+        red_mask[:height_mask, :] = red_mask[:height_mask, :]  # Conserve le haut
+        red_mask[height_mask:, :] = 0  # Supprime le bas (où il y a des lignes rouges au sol)
 
         cv2.imshow("Yellow Mask", yellow_mask)
         cv2.imshow("Red Mask", red_mask)
@@ -99,37 +102,55 @@ class GoalBall(Node):
 
         # Detect red objects (goal posts)
         contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        self.red_objects = []
-        for c in contours:
+
+        # Filtrer les contours rouges les plus significatifs
+        filtered_contours = [c for c in contours if cv2.contourArea(c) > 100]
+
+        # Extraire les centres pour self.red_objects + les bounding boxes pour goal_x
+        bounding_boxes = []
+
+        for c in filtered_contours:
             M = cv2.moments(c)
             if M['m00'] > 0:
                 cx = int(M['m10'] / M['m00'])
-                self.red_objects.append(cx)
+                bounding_boxes.append(cv2.boundingRect(c))
 
-        if len(self.red_objects) >= 2:
-            self.red_objects.sort()
-            self.goal_x = (self.red_objects[0] + self.red_objects[-1]) // 2
+        if len(bounding_boxes) >= 2:
+            bounding_boxes.sort(key=lambda b: b[0])
+            leftmost = bounding_boxes[0]
+            rightmost = bounding_boxes[-1]
+
+            self.goal_left_edge = leftmost[0]
+            self.goal_right_edge = rightmost[0] + rightmost[2]
+
+            self.goal_x = (self.goal_left_edge + self.goal_right_edge) // 2
         else:
             self.goal_x = None
+            self.goal_left_edge = None
+            self.goal_right_edge = None
+
+        if self.goal_x is not None:
+            # Affiche un cercle au centre du but
+            cv2.circle(cv_image, (self.goal_x, self.image_height // 3), 10, (255, 255, 0), -1) 
+            # Affiche une ligne verticale au centre de l'image pour référence
+            cv2.line(cv_image, (self.image_width // 2, 0), (self.image_width // 2, self.image_height), (255, 0, 0), 2)  # bleu
+            # Affiche une ligne verticale à goal_x
+            cv2.line(cv_image, (self.goal_x, 0), (self.goal_x, self.image_height), (255, 255, 0), 2)
+
+        cv2.imshow("Goal Visualization", cv_image)
 
     def goal_centered(self):
-        if len(self.red_objects) >= 2:
-            self.red_objects.sort()
-            left = self.red_objects[0]
-            right = self.red_objects[-1]
-            goal_center = (left + right) // 2
+        if self.goal_x is not None:
             image_center = self.image_width // 2
-            tolerance = self.image_width * 0.05  # 10 % de la largeur
-            return abs(goal_center - image_center) < tolerance
+            tolerance = self.image_width * 0.05  # 5% de tolérance
+            return abs(self.goal_x - image_center) < tolerance
         return False
-    
+
     def goal_alignment_offset(self):
         """Retourne la différence entre le centre de l’image et le centre du but (si visible)."""
-        if len(self.red_objects) >= 2:
-            self.red_objects.sort()
-            goal_center = (self.red_objects[0] + self.red_objects[-1]) // 2
+        if self.goal_x is not None:
             image_center = self.image_width // 2
-            return goal_center - image_center  # positif = but à droite, négatif = à gauche
+            return self.goal_x - image_center
         return None
 
     def ball_centered(self):
@@ -152,11 +173,10 @@ class GoalBall(Node):
                     twist.linear.x = self.linear_speed
                     center_x = self.image_width // 2
                     offset_x = self.ball_x - center_x
-                    twist.angular.z = -0.002 * offset_x
+                    twist.angular.z = -0.001 * offset_x
                     self.get_logger().info("Balle détéctée, on s'en approche.")
             else:
-                twist.angular.z = -self.rotate_speed
-                self.get_logger().info("Balle introuvable, on la recherche en tournant")
+                self.get_logger().info("Allumage de la caméra...")
 
         elif self.state == 'PUSH_BALL':
             if now - self.push_start_time < self.push_duration:
@@ -219,7 +239,7 @@ class GoalBall(Node):
                         self.orbit_start_time = time.time()
                         twist.linear.x = 0.0
                         twist.angular.z = 0.0
-                    elif abs(self.goal_x - self.image_width // 2) > self.image_width * 0.2:
+                    elif abs(self.goal_x - self.image_width // 2) > self.image_width * 0.3:
                         # But détecté mais pas centré → avance + correction
                         error = self.goal_x - (self.image_width // 2)
                         twist.linear.x = self.linear_speed
@@ -235,9 +255,10 @@ class GoalBall(Node):
             # Si on voit deux poteaux rouges
             if len(self.red_objects) >= 2:
                 # Calcul de l'écart en pixels
-                self.red_objects.sort()
-                post_width_px = abs(self.red_objects[-1] - self.red_objects[0])
-                target_width = self.image_width * 0.95
+                if self.goal_left_edge is not None and self.goal_right_edge is not None:
+                    post_width_px = abs(self.goal_right_edge - self.goal_left_edge)
+
+                target_width = self.image_width * 0.95  # S'approcher du but
 
                 self.get_logger().info(
                     f"SHOOT : distance but = {post_width_px}px / seuil = {target_width:.0f}px"
@@ -254,7 +275,8 @@ class GoalBall(Node):
                 # Si les poteaux ne sont plus visibles (éventuelle occlusion), on avance prudemment
                 twist.linear.x = self.linear_speed * 0.5
                 twist.angular.z = 0.0
-                self.get_logger().warn("SHOOT : poteaux perdus, avance prudente.")
+                self.get_logger().warn("SHOOT : poteaux perdus, retour à SEARCH_BALL.")
+                self.state = "SEARCH_BALL"
 
         else:  # STOP
             twist.linear.x = 0.0
