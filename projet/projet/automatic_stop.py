@@ -1,17 +1,16 @@
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Float32MultiArray, Bool
 from geometry_msgs.msg import Twist
 import time
 
-from std_msgs.msg import Float32MultiArray, Bool
 
 class AutomaticStop(Node):
     def __init__(self):
         super().__init__('automatic_stop_node')
 
         # Déclare et récupère le paramètre 'distance_limit'
-        self.declare_parameter('distance_limit', 0.15)
+        self.declare_parameter('distance_limit', 0.25)
 
         self.distance_limit = self.get_parameter('distance_limit').get_parameter_value().double_value
 
@@ -33,10 +32,11 @@ class AutomaticStop(Node):
     def lds_callback(self, msg):
         # Vérifie les distances et ajuste la correction si nécessaire
         msg_bool = Bool()
+        self.get_logger().info(f"front : {msg.data[0]}")
+        
         if msg.data[0] < self.distance_limit:
             msg_bool.data = True
             self.publisher_stop.publish(msg_bool)
-
             correction_needed = True
             stop_msg = Twist()
             stop_msg.linear.x = 0.0
@@ -44,7 +44,9 @@ class AutomaticStop(Node):
             self.publisher.publish(stop_msg)
             self.get_logger().info("Obstacle détecté à l'avant ! Arrêt.")
         else:
+            self.get_logger().info("Pas d'obstacle")
             msg_bool.data = False
+            self.publisher_stop.publish(msg_bool)
 
 def main(args=None):
     rclpy.init(args=args)
