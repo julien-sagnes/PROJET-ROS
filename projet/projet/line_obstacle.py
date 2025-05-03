@@ -12,7 +12,7 @@ class LineFollowerWithObstacle(Node):
     def __init__(self):
         super().__init__('line_follower_with_obstacle')
 
-        self.declare_parameter('linear_speed', 0.5)
+        self.declare_parameter('linear_speed', 0.05)
         self.linear_speed = self.get_parameter('linear_speed').get_parameter_value().double_value
         self.declare_parameter('angular_speed', 0.5)
         self.angular_speed = self.get_parameter('angular_speed').get_parameter_value().double_value
