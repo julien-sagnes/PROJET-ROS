@@ -35,7 +35,13 @@ class LineFollowerWithObstacle(Node):
         self.return_start_time = None
 
     def image_callback(self, msg):
-        image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        if self.interface == '/image_raw':
+                img = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding='bgr8')
+        else:
+            np_arr = np.asarray(img_msg.data, dtype = np.uint8)
+            img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            cv2.imshow('Camera View', img)
+            
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         height, width, _ = image.shape
         roi = hsv[height//2:, :]  # Region of interest
