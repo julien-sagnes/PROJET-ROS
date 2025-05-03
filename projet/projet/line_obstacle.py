@@ -3,18 +3,18 @@ import atexit
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
 from sensor_msgs.msg import CompressedImage
+from cv_bridge import CvBridge
 import cv2
 import numpy as np
 
 class LineFollowerWithObstacle(Node):
     def __init__(self):
-        super().__init__('line_follower_with_obstacle')
+        super().__init__('line_obstacle_node')
 
-        self.declare_parameter('linear_speed', 0.05)
+        self.declare_parameter('linear_speed', 0.03)
         self.linear_speed = self.get_parameter('linear_speed').get_parameter_value().double_value
-        self.declare_parameter('angular_speed', 0.5)
+        self.declare_parameter('angular_speed', 0.4)
         self.angular_speed = self.get_parameter('angular_speed').get_parameter_value().double_value
 
         self.publisher = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -89,8 +89,18 @@ class LineFollowerWithObstacle(Node):
                 self.get_logger().info(f"Line following...")  
                 center = (cx_red + cx_green) // 2
                 error = center - width // 2
-                twist.linear.x = self.linear_speed
-                twist.angular.z = -error / 100.0
+                if error < 0 :
+                    twist.linear.x = self.linear_speed
+                    twist.angular.z = error / 150.0
+
+                elif error > 0 :
+                    twist.linear.x = self.linear_speed
+                    twist.angular.z = -error / 150.0
+                
+                else :
+                    twist.linear.x = self.linear_speed
+                    twist.angular.z = 0.0
+
             elif cx_green is not None:  # Si on ne voit que la ligne verte
                 self.get_logger().info(f"Green only : to the right...")  
                 twist.linear.x = self.linear_speed
@@ -103,20 +113,22 @@ class LineFollowerWithObstacle(Node):
             else:
                 self.get_logger().info(f"Line lost : STOP") 
                 twist.linear.x = 0.0
-                twist.angular.z = 0.0  # fail-safe
+                twist.angular.z = 0.1 # fail-safe
 
         elif self.state == 'AVOID_OBSTACLE':
             elapsed = (self.get_clock().now() - self.avoid_start_time).nanoseconds / 1e9
 
-            if elapsed < 1.0:
+            if elapsed < 2.0:
+                self.get_logger().info(f'time elapsed < 2 = {elapsed}')
                 # Phase 1: déviation dans le sens opposé pour s'éloigner un peu
                 twist.linear.x = self.linear_speed
-                twist.angular.z = self.angular_speed if self.avoid_direction == 'left' else -0.8
+                twist.angular.z = self.angular_speed if self.avoid_direction == 'left' else -self.angular_speed
 
-            elif elapsed < 2.0:
+            elif elapsed < 4.0:
+                self.get_logger().info(f'time elapsed < 4 = {elapsed}')
                 # Phase 2: contournement dans la bonne direction
                 twist.linear.x = self.linear_speed 
-                twist.angular.z = -self.angular_speed if self.avoid_direction == 'left' else 0.8
+                twist.angular.z = -self.angular_speed if self.avoid_direction == 'left' else self.angular_speed
             else:
                 self.state = 'FOLLOW_LINE'
                 self.return_start_time = self.get_clock().now()
