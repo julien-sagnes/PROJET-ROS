@@ -4,6 +4,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
+from sensor_msgs.msg import CompressedImage
 import cv2
 import numpy as np
 
@@ -11,11 +12,22 @@ class LineFollowerWithObstacle(Node):
     def __init__(self):
         super().__init__('line_follower_with_obstacle')
 
-        self.declare_parameter('linear_speed', 0.1)
+        self.declare_parameter('linear_speed', 0.5)
         self.linear_speed = self.get_parameter('linear_speed').get_parameter_value().double_value
+        self.declare_parameter('angular_speed', 0.5)
+        self.angular_speed = self.get_parameter('angular_speed').get_parameter_value().double_value
 
         self.publisher = self.create_publisher(Twist, '/cmd_vel', 10)
-        self.subscriber = self.create_subscription(Image, '/image_raw', self.image_callback, 10)
+
+        self.declare_parameter('interface','/image_raw') #RAJOUTER /camera/image_raw/compressed si on veut interfacer
+        self.interface = self.get_parameter('interface').get_parameter_value().string_value
+
+        if self.interface == '/image_raw':
+            self.image_subscriber = self.create_subscription(Image, self.interface, self.image_callback, 10) # création d'un suscriber qui écoute les images de la camera
+        else:
+            self.image_subscriber = self.create_subscription(CompressedImage, self.interface, self.image_callback, 10) # création d'un suscriber qui écoute les images de la camera
+        
+        
         self.bridge = CvBridge()
         self.state = 'FOLLOW_LINE'
         self.avoid_direction = None
@@ -76,11 +88,11 @@ class LineFollowerWithObstacle(Node):
             elif cx_green is not None:  # Si on ne voit que la ligne verte
                 self.get_logger().info(f"Green only : to the right...")  
                 twist.linear.x = self.linear_speed
-                twist.angular.z = -0.8  # Tourner à gauche pour rattraper la rouge
+                twist.angular.z = -self.angular_speed  # Tourner à gauche pour rattraper la rouge
             elif cx_red is not None:  # Si on ne voit que la ligne rouge
                 self.get_logger().info(f"Red only : to the left...")  
                 twist.linear.x = self.linear_speed
-                twist.angular.z = 0.8  # Tourner à droite pour rattraper la verte
+                twist.angular.z = self.angular_speed  # Tourner à droite pour rattraper la verte
 
             else:
                 self.get_logger().info(f"Line lost : STOP") 
@@ -90,14 +102,15 @@ class LineFollowerWithObstacle(Node):
         elif self.state == 'AVOID_OBSTACLE':
             elapsed = (self.get_clock().now() - self.avoid_start_time).nanoseconds / 1e9
 
-            if elapsed < 5.0:
+            if elapsed < 1.0:
                 # Phase 1: déviation dans le sens opposé pour s'éloigner un peu
                 twist.linear.x = self.linear_speed
-                twist.angular.z = 0.8 if self.avoid_direction == 'left' else -0.8
-            elif elapsed < 12.0:
+                twist.angular.z = self.angular_speed if self.avoid_direction == 'left' else -0.8
+
+            elif elapsed < 2.0:
                 # Phase 2: contournement dans la bonne direction
                 twist.linear.x = self.linear_speed 
-                twist.angular.z = -0.8 if self.avoid_direction == 'left' else 0.8
+                twist.angular.z = -self.angular_speed if self.avoid_direction == 'left' else 0.8
             else:
                 self.state = 'FOLLOW_LINE'
                 self.return_start_time = self.get_clock().now()
