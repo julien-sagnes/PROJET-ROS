@@ -238,7 +238,7 @@ class GoalBall(Node):
                 if now - self.orbit_start_time < self.orbit_duration:
                     self.get_logger().info(f"Orbite durant {now - self.orbit_start_time} / {self.orbit_duration}.")
                     twist.linear.x = self.orbit_linear_speed
-                    twist.angular.z = -self.orbit_angular_speed if self.rotate_direction == 'left' else self.orbit_angular_speed
+                    twist.angular.z = -self.orbit_angular_speed * 0.5 if self.rotate_direction == 'left' else self.orbit_angular_speed * 0.5
                 else:
                     self.get_logger().info("Pause orbite, on regarde la balle.")
                     self.turning_phase = 'CHECK_ALIGNMENT'
