@@ -31,6 +31,8 @@ setup(
             'contourne_obstacles = projet.contourne_obstacles:main',
             'wall_follower = projet.wall_follower:main',
             'goal_ball = projet.goal_ball:main',
+            'cmd_vel_arbiter = projet.cmd_vel_arbiter:main',
+            'route_obstacle = projet.route_obstacle:main',
         ],
     },
 )
