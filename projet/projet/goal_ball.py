@@ -1,6 +1,6 @@
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image, LaserScan
+from sensor_msgs.msg import Image, CompressedImage
 from geometry_msgs.msg import Twist
 from cv_bridge import CvBridge
 import numpy as np
@@ -13,7 +13,7 @@ class GoalBall(Node):
         super().__init__('goal_ball')
 
         # Paramètres
-        self.declare_parameter('rotate_direction', 'left')
+        self.declare_parameter('rotate_direction', 'left') # Si le but est davantage à droite ou à gauche (inversé)
         self.declare_parameter('linear_speed', 0.1)
         self.declare_parameter('push_duration', 0.0)
         self.declare_parameter('ball_reposition_distance', 0.55)
@@ -27,9 +27,16 @@ class GoalBall(Node):
         self.stop_interval = self.get_parameter('stop_interval').get_parameter_value().double_value
         self.rotate_speed = self.get_parameter('rotate_speed').get_parameter_value().double_value
 
+        # Choix entre simulation et réel
+        self.declare_parameter('interface','/image_raw') #RAJOUTER /camera/image_raw/compressed si on veut interfacer
+        self.interface = self.get_parameter('interface').get_parameter_value().string_value
+
         # ROS
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
-        self.image_sub = self.create_subscription(Image, '/image_raw', self.image_callback, 10)
+        if self.interface == '/image_raw':
+            self.image_subscriber = self.create_subscription(Image, self.interface, self.image_callback, 10) # création d'un suscriber qui écoute les images de la camera
+        else:
+            self.image_subscriber = self.create_subscription(CompressedImage, self.interface, self.image_callback, 10) # création d'un suscriber qui écoute les images de la camera
 
         self.bridge = CvBridge()
 
@@ -47,14 +54,17 @@ class GoalBall(Node):
         self.push_start_time = None
         self.rotation_start_time = None
         self.orbit_start_time = None
+        self.lost_goal_start_time = None
 
         # Orbite de la balle (PAS OPTIMAL)
-        coef = 6 # facteur empirique constaté pour la rotation à 90
-        self.rotation_duration = (math.pi / 2) / self.rotate_speed * coef  # Durée théorique pour effectuer 90°
-        self.orbit_angle = math.pi / 3 * coef  # 60°
+        coef = 5.0
+        self.rotation_duration = (math.pi / 2) / self.rotate_speed * coef  # 90° rotation duration
+        self.orbit_angle = math.pi / 3  # 60° orbit
         self.orbit_linear_speed = 0.05  # m/s
-        self.orbit_angular_speed = self.orbit_linear_speed / self.ball_reposition_distance * coef
-        self.orbit_duration = self.orbit_angle / self.orbit_angular_speed
+        self.orbit_radius = self.ball_reposition_distance
+        self.orbit_angular_speed = self.orbit_linear_speed / self.orbit_radius  # rad/s
+        self.orbit_duration = self.orbit_angle / self.orbit_angular_speed  # s
+
 
         self.get_logger().info("Node GoalBall started")
 
@@ -159,8 +169,8 @@ class GoalBall(Node):
                 # Cas sans info : tolérance classique
                 tolerance = self.image_width * 0.25
 
-            self.get_logger().warn(f"diff_goal = {self.goal_x - center_x}")
-            self.get_logger().warn(f"tolerance = {tolerance}")
+            self.get_logger().warn(f"diff_goal = {abs(self.goal_x - center_x)}")
+            self.get_logger().warn(f"tolerance_goal = {tolerance}")
             return abs(self.goal_x - center_x) < tolerance
         return False
 
@@ -169,6 +179,7 @@ class GoalBall(Node):
             return False
         center_x = self.image_width // 2
 
+        # Débug affichage
         ####
         if self.goal_centered and self.ball_centered:
             temp = 1
@@ -227,10 +238,17 @@ class GoalBall(Node):
 
             elif self.turning_phase == 'ROTATE_90':
                 if now - self.rotation_start_time < self.rotation_duration:
-                    self.get_logger().info(f"Tourner durant {now - self.rotation_start_time} / {self.rotation_duration}.")
                     twist.angular.z = self.rotate_speed if self.rotate_direction == 'left' else -self.rotate_speed
                 else:
-                    self.get_logger().info("Fin de la rotation. Début de l'orbite.")
+                    self.get_logger().info("Fin de la rotation. Petite pause avant orbite.")
+                    self.turning_phase = 'WAIT_BEFORE_ORBIT'
+                    self.wait_start_time = now
+
+            elif self.turning_phase == 'WAIT_BEFORE_ORBIT':
+                if now - self.wait_start_time < 0.5:  # Attente de 0.5 seconde
+                    twist.angular.z = self.rotate_speed if self.rotate_direction == 'left' else -self.rotate_speed
+                else:
+                    self.get_logger().info("Début de l'orbite.")
                     self.turning_phase = 'ORBIT'
                     self.orbit_start_time = now
 
@@ -238,7 +256,7 @@ class GoalBall(Node):
                 if now - self.orbit_start_time < self.orbit_duration:
                     self.get_logger().info(f"Orbite durant {now - self.orbit_start_time} / {self.orbit_duration}.")
                     twist.linear.x = self.orbit_linear_speed
-                    twist.angular.z = -self.orbit_angular_speed * 0.5 if self.rotate_direction == 'left' else self.orbit_angular_speed * 0.5
+                    twist.angular.z = -self.orbit_angular_speed if self.rotate_direction == 'left' else self.orbit_angular_speed
                 else:
                     self.get_logger().info("Pause orbite, on regarde la balle.")
                     self.turning_phase = 'CHECK_ALIGNMENT'
@@ -257,7 +275,6 @@ class GoalBall(Node):
                         # Si but non détecté, on relance une orbite complète
                         self.get_logger().info("CHECK_ALIGNMENT: but perdu, reprise orbite")
                         self.turning_phase = 'REPOSITION_FRONT'
-                        self.orbit_start_time = time.time()
                         twist.linear.x = 0.0
                         twist.angular.z = 0.0
                     elif not self.goal_centered():
@@ -275,25 +292,32 @@ class GoalBall(Node):
 
         elif self.state == 'SHOOT':
             if self.goal_left_edge is not None and self.goal_right_edge is not None:
-                post_width_px = abs(self.goal_right_edge - self.goal_left_edge)
-                target_width = self.image_width * 0.95  # Seuil pour dire "on est devant le but"
+                self.get_logger().info(f"SHOOT : Centré ! ON FONCE !")
 
-                self.get_logger().info(
-                    f"SHOOT : distance but = {post_width_px}px / seuil = {target_width:.0f}px"
-                )
+                # Reset du timer de perte de but
+                self.lost_goal_start_time = None
 
-                if post_width_px < target_width:
-                    twist.linear.x = self.linear_speed * 1.5
-                    twist.angular.z = 0.0
-                    self.get_logger().info("SHOOT : en approche du but.")
-                else:
-                    self.get_logger().info("SHOOT : but atteint visuellement, arrêt.")
-                    self.state = 'STOP'
+                center_x = self.image_width // 2
+                error = self.goal_x - center_x
+
+                twist.linear.x = self.linear_speed
+                twist.angular.z = -0.002 * error
+                self.get_logger().info(f"SHOOT : en approche du but avec correction (err={error})")
+
             else:
-                # Si les poteaux ne sont plus visibles (éventuelle occlusion), on avance
+                # Si les poteaux ne sont plus visibles
                 twist.linear.x = self.linear_speed
                 twist.angular.z = 0.0
-                self.get_logger().warn("SHOOT : poteaux perdus")
+
+                if self.lost_goal_start_time is None:
+                    self.lost_goal_start_time = now  # commence le chrono
+                    self.get_logger().warn("SHOOT : poteaux perdus → début du chrono")
+                elif now - self.lost_goal_start_time > 10.0:
+                    self.get_logger().warn("SHOOT : poteaux perdus → arrêt après quelques secondes")
+                else:
+                    self.get_logger().warn(f"SHOOT : arrêt")
+                    twist.linear.x = 0.0
+
 
         self.cmd_pub.publish(twist)
 
