@@ -9,16 +9,6 @@ import launch
 
 def generate_launch_description():
 
-    # Lancement du noeud line_following
-    contourne_obstacles_node = Node(
-        package='projet',
-        executable='contourne_obstacles',
-        name='contourne_obstacles_node',
-        on_exit=launch.actions.Shutdown(),
-        output='screen',
-        emulate_tty=True,
-    )
-
     # Arrêt automatique en cas d'obstacle
     automatic_stop = Node(
         package='projet',
@@ -27,6 +17,19 @@ def generate_launch_description():
         on_exit=launch.actions.Shutdown(),
         output='screen',
         emulate_tty=True,
+    )
+
+    # Noeud de contournement d'obstacles
+    route_obstacle_node = Node(
+        package='projet',
+        executable='route_obstacle',
+        name='route_obstacle_node',
+        output='screen',
+        emulate_tty=True,
+        on_exit=launch.actions.Shutdown(),
+        parameters=[
+            {'interface':'/camera/image_raw/compressed'}
+        ]
     )
 
     # Active le lidar
@@ -39,26 +42,32 @@ def generate_launch_description():
         emulate_tty=True,
     )
 
-    line_obstacles_node = Node(
+    contourne_obstacles_node = Node(
         package='projet',
-        executable='line_obstacle',
-        name='line_obstacles_node',
+        executable='contourne_obstacles',
+        name='contourne_obstacles_node',
         output='screen',
         emulate_tty=True,
         on_exit=launch.actions.Shutdown(),
-        parameters=[
-            {'interface':'/camera/image_raw/compressed'}
-        ]
     )
 
+    cmd_vel_arbiter_node = Node(
+        package='projet',
+        executable='cmd_vel_arbiter',
+        name='cmd_vel_arbiter_node',
+        output='screen',
+        emulate_tty=True,
+        on_exit=launch.actions.Shutdown(),
+    )
 
     ld = LaunchDescription()
 
     # Ajout des actions au lancement
-    ld.add_action(lds_distance) 
+    ld.add_action(lds_distance)
     ld.add_action(automatic_stop)
     ld.add_action(contourne_obstacles_node)
-    ld.add_action(line_obstacles_node)
+    ld.add_action(route_obstacle_node)
+    ld.add_action(cmd_vel_arbiter_node)
     
 
     return ld
