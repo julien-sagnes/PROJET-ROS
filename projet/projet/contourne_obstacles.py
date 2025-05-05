@@ -9,7 +9,7 @@ class ContourneObstacles(Node):
     def __init__(self):
         super().__init__('contourne_obstacles_node')
 
-        self.declare_parameter('distance_limit', 0.25)
+        self.declare_parameter('distance_limit', 0.27)
         self.distance_limit = self.get_parameter('distance_limit').get_parameter_value().double_value
 
         self.subscriber = self.create_subscription(LaserScan, '/scan', self.contourne_callback, 10)
