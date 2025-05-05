@@ -2,6 +2,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 from geometry_msgs.msg import Twist
+import time
 import math
 
 from std_msgs.msg import Float32MultiArray
@@ -23,17 +24,21 @@ class WallFollower(Node):
             10
         )
 
-        self.declare_parameter('linear_speed', 0.05)
+        self.start_time = time.time()
+        self.wait_time = 10.0    # Nombre de secondes avant de bouger le robot
+
+        self.declare_parameter('linear_speed', 0.025)
         self.linear_speed = self.get_parameter('linear_speed').get_parameter_value().double_value
 
-        self.front_dist = float('inf')
-        self.left_dist = float('inf')
-        self.right_dist = float('inf')
+        # Très grande valeurs arbitraires
+        self.front_dist = 50.0
+        self.left_dist = 50.0
+        self.right_dist = 50.0
 
         # PID
-        self.kp = 1.0
+        self.kp = 0.5
         self.ki = 0.5
-        self.kd = 1.0
+        self.kd = 0.9
         self.last_error = 0.0
         self.integral = 0.0
         self.last_time = self.get_clock().now().nanoseconds / 1e9
@@ -50,33 +55,41 @@ class WallFollower(Node):
 
     def control_loop(self):
         twist = Twist()
+        now = time.time()
+
+        if abs(now - self.start_time) < self.wait_time:
+            self.get_logger().info(f"Attente durant {now - self.start_time} / {self.wait_time}.")
+            return
 
         current_time = self.get_clock().now().nanoseconds / 1e9
         dt = current_time - self.last_time
         dt = max(dt, 1e-4)  # éviter division par 0
 
         # Retour en ligne droite (réinitialisation du PID progressif)
-        if math.isinf(self.front_dist):
-            self.coef -= 0.009  # à modifier avec test sur robot réel
+        if self.front_dist > 0.8:
+            self.coef -= 0.008  # à modifier avec test sur robot réel
             self.kp = 1.0       # Baisse du PID
+            self.ki = 0.5
             self.get_logger().warn("Détection de ligne droite.")
             self.get_logger().info(f"ki * integral = {self.ki * self.integral}")
             self.integral *= self.coef
         
-        elif self.front_dist < 0.3:
-            self.kp = 8.0   #Augmentation du PID au virage
+        if self.front_dist < 0.4:
+            self.get_logger().error("Approche du virage : augmentation PID")
+            self.kp = 3.0   #Augmentation du PID au virage
+            self.ki = 0.8
 
         # Virage à gauche
         if any(d in [float('inf'), float('-inf')] for d in [self.left_dist]) or self.left_dist > 0.2:
             self.get_logger().warn("Correction à droite...")
             twist.linear.x = self.linear_speed
-            twist.angular.z = - 0.10
+            twist.angular.z = - 0.05
 
         # Virage à droite
         elif any(d in [float('inf'), float('-inf')] for d in [self.right_dist]) or self.right_dist > 0.2:
             self.get_logger().warn("Correction à gauche...")
             twist.linear.x = self.linear_speed
-            twist.angular.z = + 0.10
+            twist.angular.z = + 0.05
         
 
         else:
