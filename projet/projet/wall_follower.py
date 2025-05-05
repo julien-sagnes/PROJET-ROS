@@ -36,7 +36,8 @@ class WallFollower(Node):
         self.right_dist = 10.0
 
         # P
-        self.kp = 5.5
+        self.kp_init = 5.2
+        self.kp = self.kp_init
 
         self.get_logger().info("Wall follower node started.")
 
@@ -54,7 +55,14 @@ class WallFollower(Node):
         if abs(now - self.start_time) < self.wait_time:
             self.get_logger().info(f"Attente durant {now - self.start_time} / {self.wait_time}.")
             return
-    
+        
+        # Plus sensible dans le virage (si proche du mur en face)
+        if self.front_dist < 0.3 and not math.isinf(self.front_dist) and self.front_dist > 3.0:
+            self.get_logger().warn("Augmentation de kp !")
+            self.kp *= 1.1
+        else:
+            self.kp = self.kp_init
+
         # Virage à gauche
         if abs(self.left_dist) > 10 or math.isinf(self.left_dist):
             self.get_logger().warn("Correction à droite...")
