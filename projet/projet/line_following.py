@@ -23,10 +23,13 @@ class LineFollowingNode(Node):
         # Choix du côté du rond-point (True : à droite, False : à gauche)
         self.passage_a_droite = Bool()
         self.passage_a_droite = True
-
         # Choix entre simulation et réel
         self.declare_parameter('interface','/image_raw') #RAJOUTER /camera/image_raw/compressed si on veut interfacer
         self.interface = self.get_parameter('interface').get_parameter_value().string_value
+        
+        # Pour gérer le passage au prochain challenge
+        self.declare_parameter('switch_obstacle', False)
+        self.switch_obstacle = self.get_parameter('switch_obstacle').get_parameter_value()
 
         # Connexion à automatic_stop
         self.stop_subscriber = self.create_subscription(Bool, 'stop_running', self.stop_callback, 10)
@@ -74,7 +77,7 @@ class LineFollowingNode(Node):
         
     # Fonction qui est appelée à chaque fois qu'une nouvelle image est reçue
     def image_callback(self, img_msg):
-        if not self.stop_running.data:
+        if not self.stop_running.data and not self.switch_obstacle:
             # conversion de l'image en OpenCV
             if self.interface == '/image_raw':
                 img = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding='bgr8')
@@ -124,15 +127,9 @@ class LineFollowingNode(Node):
                 contours_green = [max(contours_green, key=cv2.contourArea)]
             if contours_blue:
                 contours_blue = [max(contours_blue, key=cv2.contourArea)]
-
-            if contours_blue :
-                M_blue = cv2.moments(contours_blue[0])
-                if M_blue["m00"] != 0 :
-                    cx_blue = int(M_blue["m10"] / M_blue["m00"])
-                    cy_blue = int(M_blue["m01"] / M_blue["m00"])
-                    cv2.circle(roi, (cx_blue, cy_blue), 5, (255, 0, 0), -1)
-                    self.get_logger().info(f'1. cx_blue = {cx_blue}, cy_blue = {cy_blue}')
-
+                self.switch_obstacle = True
+                return
+            
             # Calcul de la trajectoire
             # Si les 2 lignes sont détectées
             if contours_red and contours_green:
@@ -208,10 +205,6 @@ class LineFollowingNode(Node):
                                 twist.linear.x = 0.05 # on maintient la vitesse en ligne droite
                                 twist.angular.z = 0.5
                                 self.cmd_vel_publisher.publish(twist)
-
-                    
-
-
 
             elif contours_green and not contours_red:
                 # Ligne verte seulement -> tourne vers la droite

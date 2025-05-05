@@ -25,24 +25,18 @@ class WallFollower(Node):
         )
 
         self.start_time = time.time()
-        self.wait_time = 10.0    # Nombre de secondes avant de bouger le robot
+        self.wait_time = 0.0    # Nombre de secondes avant de bouger le robot
 
         self.declare_parameter('linear_speed', 0.025)
         self.linear_speed = self.get_parameter('linear_speed').get_parameter_value().double_value
 
         # Très grande valeurs arbitraires
-        self.front_dist = 50.0
-        self.left_dist = 50.0
-        self.right_dist = 50.0
+        self.front_dist = 10.0
+        self.left_dist = 10.0
+        self.right_dist = 10.0
 
-        # PID
-        self.kp = 0.5
-        self.ki = 0.5
-        self.kd = 0.9
-        self.last_error = 0.0
-        self.integral = 0.0
-        self.last_time = self.get_clock().now().nanoseconds / 1e9
-        self.coef = 1.0
+        # P
+        self.kp = 5.5
 
         self.get_logger().info("Wall follower node started.")
 
@@ -60,61 +54,31 @@ class WallFollower(Node):
         if abs(now - self.start_time) < self.wait_time:
             self.get_logger().info(f"Attente durant {now - self.start_time} / {self.wait_time}.")
             return
-
-        current_time = self.get_clock().now().nanoseconds / 1e9
-        dt = current_time - self.last_time
-        dt = max(dt, 1e-4)  # éviter division par 0
-
-        # Retour en ligne droite (réinitialisation du PID progressif)
-        if self.front_dist > 0.8:
-            self.coef -= 0.008  # à modifier avec test sur robot réel
-            self.kp = 1.0       # Baisse du PID
-            self.ki = 0.5
-            self.get_logger().warn("Détection de ligne droite.")
-            self.get_logger().info(f"ki * integral = {self.ki * self.integral}")
-            self.integral *= self.coef
-        
-        if self.front_dist < 0.4:
-            self.get_logger().error("Approche du virage : augmentation PID")
-            self.kp = 3.0   #Augmentation du PID au virage
-            self.ki = 0.8
-
+    
         # Virage à gauche
-        if any(d in [float('inf'), float('-inf')] for d in [self.left_dist]) or self.left_dist > 0.2:
+        if abs(self.left_dist) > 10 or math.isinf(self.left_dist):
             self.get_logger().warn("Correction à droite...")
             twist.linear.x = self.linear_speed
-            twist.angular.z = - 0.05
+            twist.angular.z = - 0.1
 
         # Virage à droite
-        elif any(d in [float('inf'), float('-inf')] for d in [self.right_dist]) or self.right_dist > 0.2:
+        elif self.right_dist > 10 or math.isinf(self.right_dist):
             self.get_logger().warn("Correction à gauche...")
             twist.linear.x = self.linear_speed
-            twist.angular.z = + 0.05
-        
+            twist.angular.z = + 0.1
 
         else:
             error = self.left_dist - self.right_dist
-            self.integral += error * dt
-            derivative = (error - self.last_error) / dt
 
-            correction = (
-                self.kp * error +
-                self.ki * self.integral +
-                self.kd * derivative
-            )
-            self.get_logger().info(f"ki * integral = {self.ki * self.integral}")
+            correction = self.kp * error
 
             twist.linear.x = self.linear_speed
             twist.angular.z = correction
-
-            self.last_error = error
 
             self.get_logger().info(
                 f"Front : {self.front_dist}, Left: {self.left_dist:.3f}, Right: {self.right_dist:.3f}, Error: {error:.3f}, Angular Z: {twist.angular.z:.3f}")
 
         self.publisher.publish(twist)
-
-        self.last_time = current_time
 
 def main(args=None):
     rclpy.init(args=args)

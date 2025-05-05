@@ -171,7 +171,7 @@ class GoalBall(Node):
                 relative_width = goal_width_px / self.image_width  # entre 0.0 et 1.0
 
                 # La tolérance est plus faible quand le but paraît étroit
-                # Exemple : pour un but très large → tolérance jusqu'à 15%, très étroit → tolérance jusqu'à 5%
+                # Exemple : pour un but très large → tolérance jusqu'à 25%, très étroit → tolérance jusqu'à 30%
                 tolerance = self.image_width * (0.25 + 0.5 * relative_width)
             else:
                 # Cas sans info : tolérance classique
@@ -318,7 +318,7 @@ class GoalBall(Node):
                     self.lost_goal_start_time = now  # commence le chrono
                     self.get_logger().warn("SHOOT : poteaux perdus → début du chrono")
                 elif now - self.lost_goal_start_time < 10.0:
-                    self.get_logger().info(f"{now - self.lost_goal_start_time} / 3.0")
+                    self.get_logger().info(f"{now - self.lost_goal_start_time} / 10.0")
                     self.get_logger().warn("SHOOT : poteaux perdus → arrêt après quelques secondes")
                 else:
                     self.get_logger().warn(f"SHOOT : arrêt")
