@@ -79,7 +79,15 @@ class GoalBall(Node):
         upper_yellow = np.array([32, 255, 255])
 
         yellow_mask = cv2.inRange(hsv, lower_yellow, upper_yellow)
+
+        # Nettoyage du masque : fermeture puis ouverture
+        kernel = np.ones((5, 5), np.uint8)
+        yellow_mask = cv2.morphologyEx(yellow_mask, cv2.MORPH_CLOSE, kernel)  # comble les trous
+        yellow_mask = cv2.morphologyEx(yellow_mask, cv2.MORPH_OPEN, kernel)   # enlève le bruit
+
+        # Optionnel : léger flou après le nettoyage
         yellow_mask = cv2.GaussianBlur(yellow_mask, (5, 5), 0)
+
 
         # Red mask for goal posts
         lower_red1 = np.array([0, 60, 50])
@@ -164,10 +172,10 @@ class GoalBall(Node):
 
                 # La tolérance est plus faible quand le but paraît étroit
                 # Exemple : pour un but très large → tolérance jusqu'à 15%, très étroit → tolérance jusqu'à 5%
-                tolerance = self.image_width * (0.05 + 0.10 * relative_width)
+                tolerance = self.image_width * (0.25 + 0.5 * relative_width)
             else:
                 # Cas sans info : tolérance classique
-                tolerance = self.image_width * 0.15
+                tolerance = self.image_width * 0.30
 
             self.get_logger().warn(f"diff_goal = {abs(self.goal_x - center_x)}")
             self.get_logger().warn(f"tolerance_goal = {tolerance}")
@@ -303,13 +311,13 @@ class GoalBall(Node):
 
             else:
                 # Si les poteaux ne sont plus visibles
-                twist.linear.x = self.linear_speed
+                twist.linear.x = self.linear_speed * 2
                 twist.angular.z = 0.0
 
                 if self.lost_goal_start_time is None:
                     self.lost_goal_start_time = now  # commence le chrono
                     self.get_logger().warn("SHOOT : poteaux perdus → début du chrono")
-                elif now - self.lost_goal_start_time < 3.0:
+                elif now - self.lost_goal_start_time < 10.0:
                     self.get_logger().info(f"{now - self.lost_goal_start_time} / 3.0")
                     self.get_logger().warn("SHOOT : poteaux perdus → arrêt après quelques secondes")
                 else:

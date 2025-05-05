@@ -23,6 +23,7 @@ class LineFollowingNode(Node):
         # Choix du côté du rond-point (True : à droite, False : à gauche)
         self.passage_a_droite = Bool()
         self.passage_a_droite = True
+
         # Choix entre simulation et réel
         self.declare_parameter('interface','/image_raw') #RAJOUTER /camera/image_raw/compressed si on veut interfacer
         self.interface = self.get_parameter('interface').get_parameter_value().string_value
@@ -90,8 +91,8 @@ class LineFollowingNode(Node):
             h_roi, w_roi, _ = roi.shape
             self.width_proportion = w_roi/352
             self.height_proportion = h_roi/231
-            print(f"largeur proportionnée = {self.width_proportion}")
-            print(f"hauteur proportionnée = {self.height_proportion}")
+            #print(f"largeur proportionnée = {self.width_proportion}")
+            #print(f"hauteur proportionnée = {self.height_proportion}")
             # Conversion de RGB en HSV (meilleurs pour la détection des couleurs)
             hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
 
@@ -159,7 +160,7 @@ class LineFollowingNode(Node):
                     
                 
                     if cx_green < cx_red :
-                        if cx_green < 120*self.width_proportion and cy_green < 40*self.height_proportion : # virage à gauche
+                        if cx_green < 190*self.width_proportion and cy_green < 40*self.height_proportion : # virage à gauche
 
                             self.get_logger().info(f'Il faut encore tourner à gauche !  V et R')
                             # Commandes de mouvement: le robot avance avec une vitesse linéaire et tourne selon l'erreur calculée (PID)
@@ -168,7 +169,7 @@ class LineFollowingNode(Node):
                             twist.angular.z = 0.5
                             self.cmd_vel_publisher.publish(twist)
 
-                        elif cx_green > 80*self.width_proportion and cy_green > 79*self.height_proportion and cx_red > 150*self.width_proportion and cy_red < 50*self.height_proportion :
+                        elif cx_green > 5*self.width_proportion and cy_green > 79*self.height_proportion and cx_red > 150*self.width_proportion and cy_red < 50*self.height_proportion :
                             self.get_logger().info(f'Il faut encore tourner à DROITE !  V et R')
                             # Commandes de mouvement: le robot avance avec une vitesse linéaire et tourne selon l'erreur calculée (PID)
                             twist = Twist()
@@ -223,7 +224,7 @@ class LineFollowingNode(Node):
                     cv2.circle(roi, (cx_green, cy_green), 5, (0, 255, 0), -1)  # cercle vert
                     self.get_logger().info(f'2. cx_green = {cx_green}, cy_green = {cy_green}')
 
-                    if cx_green > 100*self.width_proportion and cy_green > 130*self.height_proportion:  # Quand trop près de la ligne
+                    if cx_green > 90*self.width_proportion and cy_green > 110*self.height_proportion:  # Quand trop près de la ligne
                         self.get_logger().info(f'Tourne vers la droite VERT ONLY')
                         twist = Twist()
                         twist.linear.x = 0.05
@@ -254,14 +255,14 @@ class LineFollowingNode(Node):
 
                     
                     
-                    if cx_red < 180*self.width_proportion and cy_red > 100*self.height_proportion :
+                    if cx_red < 200*self.width_proportion and cy_red > 100*self.height_proportion :
                         self.get_logger().info(f'Il faut tourner à gauche ROUGE ONLY!!')
                         twist = Twist()
                         twist.linear.x = 0.05
                         twist.angular.z = 0.5
                         self.cmd_vel_publisher.publish(twist)
 
-                    elif cy_red > 200*self.height_proportion :
+                    elif cx_red > 200 and cy_red < 200*self.height_proportion :
                         self.get_logger().info(f'OULA FAUT TOURNER ROUGE ONLY!!')
                         twist = Twist()
                         twist.linear.x = 0.05
