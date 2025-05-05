@@ -14,17 +14,15 @@ class GoalBall(Node):
 
         # Paramètres
         self.declare_parameter('rotate_direction', 'left') # Si le but est davantage à droite ou à gauche (inversé)
-        self.declare_parameter('linear_speed', 0.1)
+        self.declare_parameter('linear_speed', 0.05)
         self.declare_parameter('push_duration', 0.0)
-        self.declare_parameter('ball_reposition_distance', 0.55)
-        self.declare_parameter('stop_interval', 1.5)
-        self.declare_parameter('rotate_speed', 1.0)
+        self.declare_parameter('ball_reposition_distance', 0.7)
+        self.declare_parameter('rotate_speed', 0.3)
 
         self.rotate_direction = self.get_parameter('rotate_direction').get_parameter_value().string_value
         self.linear_speed = self.get_parameter('linear_speed').get_parameter_value().double_value
         self.push_duration = self.get_parameter('push_duration').get_parameter_value().double_value
         self.ball_reposition_distance = self.get_parameter('ball_reposition_distance').get_parameter_value().double_value
-        self.stop_interval = self.get_parameter('stop_interval').get_parameter_value().double_value
         self.rotate_speed = self.get_parameter('rotate_speed').get_parameter_value().double_value
 
         # Choix entre simulation et réel
@@ -50,41 +48,43 @@ class GoalBall(Node):
         self.lidar_ranges = []
 
         self.state = 'SEARCH_BALL'
+        self.start_timer = time.time()
+        self.wait_time = 6.0
         self.turning_phase = None
         self.push_start_time = None
         self.rotation_start_time = None
         self.orbit_start_time = None
+        self.orbit_duration = 3.0
         self.lost_goal_start_time = None
 
-        # Orbite de la balle (PAS OPTIMAL)
-        coef = 5.0
-        self.rotation_duration = (math.pi / 2) / self.rotate_speed * coef  # 90° rotation duration
-        self.orbit_angle = math.pi / 3  # 60° orbit
-        self.orbit_linear_speed = 0.05  # m/s
-        self.orbit_radius = self.ball_reposition_distance
-        self.orbit_angular_speed = self.orbit_linear_speed / self.orbit_radius  # rad/s
-        self.orbit_duration = self.orbit_angle / self.orbit_angular_speed  # s
-
+        # 90°
+        self.rotation_duration = (math.pi / 2) / self.rotate_speed  # 90° rotation duration
 
         self.get_logger().info("Node GoalBall started")
 
     def image_callback(self, msg):
-        cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-        hsv = cv2.cvtColor(cv_image, cv2.COLOR_BGR2HSV)
+        if self.interface == '/image_raw':
+            img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        else:
+            np_arr = np.asarray(msg.data, dtype = np.uint8)
+            img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            cv2.imshow('Camera View', img)
 
-        self.image_width = msg.width
-        self.image_height = msg.height
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        self.image_height, self.image_width, _ = img.shape
+        
 
         # Yellow mask for the ball
-        lower_yellow = np.array([20, 80, 80])
-        upper_yellow = np.array([40, 255, 255])
+        lower_yellow = np.array([22, 80, 80])
+        upper_yellow = np.array([32, 255, 255])
+
         yellow_mask = cv2.inRange(hsv, lower_yellow, upper_yellow)
         yellow_mask = cv2.GaussianBlur(yellow_mask, (5, 5), 0)
 
         # Red mask for goal posts
-        lower_red1 = np.array([0, 100, 100])
+        lower_red1 = np.array([0, 60, 50])
         upper_red1 = np.array([10, 255, 255])
-        lower_red2 = np.array([160, 100, 100])
+        lower_red2 = np.array([160, 50, 50])
         upper_red2 = np.array([180, 255, 255])
         red_mask = cv2.inRange(hsv, lower_red1, upper_red1) | cv2.inRange(hsv, lower_red2, upper_red2)
         # Masking lower part of the image to ignore red lines on the floor
@@ -141,17 +141,17 @@ class GoalBall(Node):
 
         if self.goal_x is not None:
             # Affiche un cercle au centre du but
-            cv2.circle(cv_image, (self.goal_x, self.image_height // 3), 10, (0, 0, 255), -1) 
+            cv2.circle(img, (self.goal_x, self.image_height // 3), 10, (0, 0, 255), -1) 
             # Affiche une ligne verticale à goal_x
-            cv2.line(cv_image, (self.goal_x, 0), (self.goal_x, self.image_height), (0, 0, 255), 2)
+            cv2.line(img, (self.goal_x, 0), (self.goal_x, self.image_height), (0, 0, 255), 2)
             # Affiche un cercle au centre de la balle
-            cv2.circle(cv_image, (self.ball_x, self.image_height // 3), 10, (0, 255, 255), -1) 
+            cv2.circle(img, (self.ball_x, self.image_height // 3), 10, (0, 255, 255), -1) 
             # Affiche une ligne verticale à ball_x
-            cv2.line(cv_image, (self.ball_x, 0), (self.ball_x, self.image_height), (0, 255, 255), 2)  
+            cv2.line(img, (self.ball_x, 0), (self.ball_x, self.image_height), (0, 255, 255), 2)  
             # Affiche une ligne verticale au centre de l'image pour référence
-            cv2.line(cv_image, (self.image_width // 2, 0), (self.image_width // 2, self.image_height), (0, 0, 0), 2)  # bleu
+            cv2.line(img, (self.image_width // 2, 0), (self.image_width // 2, self.image_height), (0, 0, 0), 2)  # bleu
 
-        cv2.imshow("Goal Visualization", cv_image)
+        cv2.imshow("Goal Visualization",img)
 
     def goal_centered(self):
         if self.goal_x is not None:
@@ -163,11 +163,11 @@ class GoalBall(Node):
                 relative_width = goal_width_px / self.image_width  # entre 0.0 et 1.0
 
                 # La tolérance est plus faible quand le but paraît étroit
-                # Exemple : pour un but très large → tolérance jusqu'à 25%, très étroit → tolérance jusqu'à 10%
-                tolerance = self.image_width * (0.1 + 0.15 * relative_width)
+                # Exemple : pour un but très large → tolérance jusqu'à 15%, très étroit → tolérance jusqu'à 5%
+                tolerance = self.image_width * (0.05 + 0.10 * relative_width)
             else:
                 # Cas sans info : tolérance classique
-                tolerance = self.image_width * 0.25
+                tolerance = self.image_width * 0.15
 
             self.get_logger().warn(f"diff_goal = {abs(self.goal_x - center_x)}")
             self.get_logger().warn(f"tolerance_goal = {tolerance}")
@@ -179,21 +179,17 @@ class GoalBall(Node):
             return False
         center_x = self.image_width // 2
 
-        # Débug affichage
-        ####
-        if self.goal_centered and self.ball_centered:
-            temp = 1
-        else:
-            temp = 0
-        self.get_logger().warn(f"diff_ball = {abs(self.ball_x - center_x)}")
-        self.get_logger().warn(f"goal + ball = {temp}")
-        ####
-
         return abs(self.ball_x - center_x) < self.image_width * 0.1 # 20% de tolérance
 
     def control_loop(self):
         twist = Twist()
         now = time.time()
+
+        # Attente que la caméra se lance
+        if now - self.start_timer < self.wait_time:
+            self.get_logger().info("Temps de lancement...")
+            self.get_logger().info(f"Attente durant {now - self.start_timer} / {self.wait_time}.")
+            return
 
         if self.state == 'SEARCH_BALL':
             if self.ball_detected:
@@ -205,14 +201,15 @@ class GoalBall(Node):
                     twist.linear.x = self.linear_speed
                     center_x = self.image_width // 2
                     offset_x = self.ball_x - center_x
-                    twist.angular.z = -0.002 * offset_x
+                    twist.angular.z = -0.001 * offset_x
                     self.get_logger().info("Balle détéctée, on s'en approche.")
             else:
-                self.get_logger().info("Allumage de la caméra...")
+                self.get_logger().info("Recherche de la balle")
+                twist.angular.z = self.rotate_speed
 
         elif self.state == 'PUSH_BALL':
             if now - self.push_start_time < self.push_duration:
-                twist.linear.x = self.linear_speed * 0.5
+                twist.linear.x = self.linear_speed
                 twist.angular.z = 0.2 if self.rotate_direction == 'left' else -0.2
             if self.goal_centered() and self.ball_centered():
                 self.get_logger().warn("Alignement balle-but déjà parfait. On passe au tir !")
@@ -227,7 +224,7 @@ class GoalBall(Node):
             if self.turning_phase == 'REPOSITION_FRONT':
                 # Si trop proche : on recule
                 if self.ball_detected and self.ball_y > self.image_height * self.ball_reposition_distance:
-                    twist.linear.x = - self.linear_speed * 0.5
+                    twist.linear.x = - self.linear_speed
                     center_x = self.image_width // 2
                     offset_x = self.ball_x - center_x
                     twist.angular.z = -0.002 * offset_x
@@ -240,23 +237,14 @@ class GoalBall(Node):
                 if now - self.rotation_start_time < self.rotation_duration:
                     twist.angular.z = self.rotate_speed if self.rotate_direction == 'left' else -self.rotate_speed
                 else:
-                    self.get_logger().info("Fin de la rotation. Petite pause avant orbite.")
-                    self.turning_phase = 'WAIT_BEFORE_ORBIT'
-                    self.wait_start_time = now
-
-            elif self.turning_phase == 'WAIT_BEFORE_ORBIT':
-                if now - self.wait_start_time < 0.5:  # Attente de 0.5 seconde
-                    twist.angular.z = self.rotate_speed if self.rotate_direction == 'left' else -self.rotate_speed
-                else:
-                    self.get_logger().info("Début de l'orbite.")
+                    self.get_logger().info("Fin de la rotation. Passage à l'orbite")
                     self.turning_phase = 'ORBIT'
                     self.orbit_start_time = now
 
             elif self.turning_phase == 'ORBIT':
                 if now - self.orbit_start_time < self.orbit_duration:
                     self.get_logger().info(f"Orbite durant {now - self.orbit_start_time} / {self.orbit_duration}.")
-                    twist.linear.x = self.orbit_linear_speed
-                    twist.angular.z = -self.orbit_angular_speed if self.rotate_direction == 'left' else self.orbit_angular_speed
+                    twist.linear.x = self.linear_speed
                 else:
                     self.get_logger().info("Pause orbite, on regarde la balle.")
                     self.turning_phase = 'CHECK_ALIGNMENT'
@@ -269,7 +257,16 @@ class GoalBall(Node):
                     twist.linear.x = 0.0
                     twist.angular.z = -self.rotate_speed if self.rotate_direction == "left" else self.rotate_speed
                     self.get_logger().info("CHECK_ALIGNMENT: rotation pour centrer la balle")
-                else:
+
+                    # Débug affichage
+                    ####
+                    if self.goal_centered() and self.ball_centered():
+                        temp = 1
+                    else:
+                        temp = 0
+                    ####
+
+                elif self.ball_detected and self.ball_centered():
                     # 2) Balle centrée, on regarde le but
                     if self.goal_x is None:
                         # Si but non détecté, on relance une orbite complète
@@ -312,7 +309,8 @@ class GoalBall(Node):
                 if self.lost_goal_start_time is None:
                     self.lost_goal_start_time = now  # commence le chrono
                     self.get_logger().warn("SHOOT : poteaux perdus → début du chrono")
-                elif now - self.lost_goal_start_time > 10.0:
+                elif now - self.lost_goal_start_time < 3.0:
+                    self.get_logger().info(f"{now - self.lost_goal_start_time} / 3.0")
                     self.get_logger().warn("SHOOT : poteaux perdus → arrêt après quelques secondes")
                 else:
                     self.get_logger().warn(f"SHOOT : arrêt")
