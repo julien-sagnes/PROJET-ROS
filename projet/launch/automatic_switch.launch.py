@@ -41,6 +41,36 @@ def generate_launch_description():
         ]
     )
 
+    # Noeuds de contournement d'obstacles
+    route_obstacle_node = Node(
+        package='projet',
+        executable='route_obstacle',
+        name='route_obstacle_node',
+        output='screen',
+        emulate_tty=True,
+        on_exit=launch.actions.Shutdown(),
+        parameters=[
+            {'interface':'/camera/image_raw/compressed'}
+        ]
+    )
+    
+    contourne_obstacles_node = Node(
+        package='projet',
+        executable='contourne_obstacles',
+        name='contourne_obstacles_node',
+        output='screen',
+        emulate_tty=True,
+        on_exit=launch.actions.Shutdown(),
+    )
+
+    cmd_vel_arbiter_node = Node(
+        package='projet',
+        executable='cmd_vel_arbiter',
+        name='cmd_vel_arbiter_node',
+        output='screen',
+        emulate_tty=True,
+        on_exit=launch.actions.Shutdown(),
+    )
 
     ld = LaunchDescription()
 
@@ -48,5 +78,8 @@ def generate_launch_description():
     ld.add_action(lds_distance)
     ld.add_action(automatic_stop)
     ld.add_action(line_following)
+    ld.add_action(route_obstacle_node)
+    ld.add_action(contourne_obstacles_node)
+    ld.add_action(cmd_vel_arbiter_node)
 
     return ld

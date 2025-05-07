@@ -9,6 +9,9 @@ class ContourneObstacles(Node):
     def __init__(self):
         super().__init__('contourne_obstacles_node')
 
+        self.switch_obstacle = False
+        self.create_subscription(Bool, '/switch_obstacle', self.switch_obstacle_callback, 10)
+
         self.declare_parameter('distance_limit', 0.27)
         self.distance_limit = self.get_parameter('distance_limit').get_parameter_value().double_value
 
@@ -17,63 +20,67 @@ class ContourneObstacles(Node):
         self.publisher2 = self.create_publisher(Bool, '/obstacle_active', 10)
 
         self.get_logger().info("Node 'contourne_obstacles' activé...")
+
+    def switch_obstacle_callback(self, msg):
+        self.switch_obstacle = msg.data
     
     def contourne_callback(self, msg):
-        distances = msg.ranges
-        angle_min = msg.angle_min
-        angle_increment = msg.angle_increment
+        if self.switch_obstacle:
+            distances = msg.ranges
+            angle_min = msg.angle_min
+            angle_increment = msg.angle_increment
 
-        # Afficher uniquement les mesures valides (ni 0.0 ni inf)
-        for i, dist in enumerate(distances):
-            if dist != 0.0 and not math.isinf(dist):
-                angle = angle_min + i * angle_increment
-                self.get_logger().debug(f"Index {i} - Angle: {math.degrees(angle):.1f}° - Distance: {dist:.2f} m")
+            # Afficher uniquement les mesures valides (ni 0.0 ni inf)
+            for i, dist in enumerate(distances):
+                if dist != 0.0 and not math.isinf(dist):
+                    angle = angle_min + i * angle_increment
+                    self.get_logger().debug(f"Index {i} - Angle: {math.degrees(angle):.1f}° - Distance: {dist:.2f} m")
 
-        # Zones d'analyse gauche et droite
-        gauche_detecte = False
-        droite_detecte = False
-        msg_bool = Bool()
-        msg_bool.data = False
-        # Zone gauche : indices 1 à 50
-        for i in range(1, 50):
-            dist = distances[i]
-            if 0.0 < dist < self.distance_limit:
-                gauche_detecte = True
-                msg_bool.data = True
-                self.get_logger().info(f"Obstacle à gauche (index {i}) : {dist:.2f} m")
-                break  # On agit dès le premier obstacle
-
-        # Zone droite : indices 300 à 359
-        for i in range(310, 359):
-            dist = distances[i]
-            if 0.0 < dist < self.distance_limit:
-                droite_detecte = True
-                msg_bool.data = True
-                self.get_logger().info(f"Obstacle à droite (index {i}) : {dist:.2f} m")
-                break  # On agit dès le premier obstacle
-
-        # Action
-        cmd = Twist()
-        if gauche_detecte:
-            cmd.linear.x = 0.02
-            cmd.angular.z = -0.4  # Tourne à droite
-        
-            self.publisher.publish(cmd)
-            self.publisher2.publish(msg_bool)
-            self.get_logger().info("Contournement par la droite")
-            
-        elif droite_detecte:
-            cmd.linear.x = 0.02
-            cmd.angular.z = 0.4  # Tourne à gauche
-            
-            self.publisher.publish(cmd)
-            self.publisher2.publish(msg_bool)
-            self.get_logger().info("Contournement par la gauche")
-        else:
-            # Si pas d'obstacle : avancer tout droit ou ne rien faire
+            # Zones d'analyse gauche et droite
+            gauche_detecte = False
+            droite_detecte = False
+            msg_bool = Bool()
             msg_bool.data = False
-            self.publisher2.publish(msg_bool)
-            self.get_logger().info("Aucun obstacle détecté dans les zones critiques")
+            # Zone gauche : indices 1 à 50
+            for i in range(1, 50):
+                dist = distances[i]
+                if 0.0 < dist < self.distance_limit:
+                    gauche_detecte = True
+                    msg_bool.data = True
+                    self.get_logger().info(f"Obstacle à gauche (index {i}) : {dist:.2f} m")
+                    break  # On agit dès le premier obstacle
+
+            # Zone droite : indices 300 à 359
+            for i in range(310, 359):
+                dist = distances[i]
+                if 0.0 < dist < self.distance_limit:
+                    droite_detecte = True
+                    msg_bool.data = True
+                    self.get_logger().info(f"Obstacle à droite (index {i}) : {dist:.2f} m")
+                    break  # On agit dès le premier obstacle
+
+            # Action
+            cmd = Twist()
+            if gauche_detecte:
+                cmd.linear.x = 0.02
+                cmd.angular.z = -0.4  # Tourne à droite
+            
+                self.publisher.publish(cmd)
+                self.publisher2.publish(msg_bool)
+                self.get_logger().info("Contournement par la droite")
+                
+            elif droite_detecte:
+                cmd.linear.x = 0.02
+                cmd.angular.z = 0.4  # Tourne à gauche
+                
+                self.publisher.publish(cmd)
+                self.publisher2.publish(msg_bool)
+                self.get_logger().info("Contournement par la gauche")
+            else:
+                # Si pas d'obstacle : avancer tout droit ou ne rien faire
+                msg_bool.data = False
+                self.publisher2.publish(msg_bool)
+                self.get_logger().info("Aucun obstacle détecté dans les zones critiques")
 
 def main(args=None):
     rclpy.init(args=args)

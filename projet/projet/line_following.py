@@ -28,8 +28,9 @@ class LineFollowingNode(Node):
         self.interface = self.get_parameter('interface').get_parameter_value().string_value
         
         # Pour gérer le passage au prochain challenge
-        self.declare_parameter('switch_obstacle', False)
-        self.switch_obstacle = self.get_parameter('switch_obstacle').get_parameter_value()
+        self.switch_obstacle_publisher = self.create_publisher(Bool, '/switch_obstacle', 10)
+        self.switch_obstacle = Bool()
+        self.switch_obstacle.data = False
 
         # Connexion à automatic_stop
         self.stop_subscriber = self.create_subscription(Bool, 'stop_running', self.stop_callback, 10)
@@ -77,7 +78,7 @@ class LineFollowingNode(Node):
         
     # Fonction qui est appelée à chaque fois qu'une nouvelle image est reçue
     def image_callback(self, img_msg):
-        if not self.stop_running.data and not self.switch_obstacle:
+        if not self.stop_running.data and not self.switch_obstacle.data:
             # conversion de l'image en OpenCV
             if self.interface == '/image_raw':
                 img = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding='bgr8')
@@ -126,8 +127,8 @@ class LineFollowingNode(Node):
             if contours_green:
                 contours_green = [max(contours_green, key=cv2.contourArea)]
             if contours_blue:
-                contours_blue = [max(contours_blue, key=cv2.contourArea)]
-                self.switch_obstacle = True
+                self.switch_obstacle.data = True
+                self.switch_obstacle_publisher.publish(self.switch_obstacle)
                 return
             
             # Calcul de la trajectoire

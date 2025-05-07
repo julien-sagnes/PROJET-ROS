@@ -27,7 +27,7 @@ class WallFollower(Node):
         self.start_time = time.time()
         self.wait_time = 0.0    # Nombre de secondes avant de bouger le robot
 
-        self.declare_parameter('linear_speed', 0.025)
+        self.declare_parameter('linear_speed', 0.05)
         self.linear_speed = self.get_parameter('linear_speed').get_parameter_value().double_value
 
         # Très grande valeurs arbitraires
@@ -36,7 +36,7 @@ class WallFollower(Node):
         self.right_dist = 10.0
 
         # P
-        self.kp_init = 5.2
+        self.kp_init = 5.3
         self.kp = self.kp_init
 
         self.get_logger().info("Wall follower node started.")
@@ -57,30 +57,32 @@ class WallFollower(Node):
             return
         
         # Plus sensible dans le virage (si proche du mur en face)
-        if self.front_dist < 0.3 and not math.isinf(self.front_dist) and self.front_dist > 3.0:
+        coef_add = 0.2
+        if self.front_dist < 0.3 and not math.isinf(self.front_dist):
             self.get_logger().warn("Augmentation de kp !")
-            self.kp *= 1.1
+            self.kp += coef_add
         else:
             self.kp = self.kp_init
 
-        # Retour en ligne droite (réinitialisation du PID progressif)
-        if self.front_dist > 0.8:
-            self.coef -= 0.008  # à modifier avec test sur robot réel
-            self.get_logger().warn("Détection de ligne droite.")
-            self.get_logger().info(f"ki * integral = {self.ki * self.integral}")
-            self.integral *= self.coef
+        # # Retour en ligne droite (réinitialisation du PID progressif)
+        # if self.front_dist > 0.8:
+        #     self.coef -= 0.008  # à modifier avec test sur robot réel
+        #     self.get_logger().warn("Détection de ligne droite.")
+        #     self.get_logger().info(f"ki * integral = {self.ki * self.integral}")
+        #     self.integral *= self.coef
 
         # Mur gauche perdu : Virage à droite
+        correction_coef = 0.05
         if abs(self.left_dist) > 10 or math.isinf(self.left_dist):
             self.get_logger().warn("Correction à droite...")
             twist.linear.x = self.linear_speed
-            twist.angular.z = - 0.1
+            twist.angular.z = - correction_coef
 
         # Mur droit perdu : Virage à gauche
         elif self.right_dist > 10 or math.isinf(self.right_dist):
             self.get_logger().warn("Correction à gauche...")
             twist.linear.x = self.linear_speed
-            twist.angular.z = + 0.1
+            twist.angular.z = + correction_coef
 
         else:
             error = self.left_dist - self.right_dist

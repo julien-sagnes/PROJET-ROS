@@ -17,6 +17,9 @@ class routeObstacleNode(Node):
     def __init__(self):
         super().__init__('route_obstacle_node') # initialisation du noeud avec le nom "line_following_node"
 
+        self.switch_obstacle = False
+        self.create_subscription(Bool, '/switch_obstacle', self.switch_obstacle_callback, 10)
+
         # Choix de la vitesse global
         self.declare_parameter('linear_scale',0.07)
         self.linear_scale = self.get_parameter('linear_scale').get_parameter_value().double_value
@@ -65,6 +68,9 @@ class routeObstacleNode(Node):
 
         self.width_proportion = 1.0
         self.height_proportion = 1.0
+
+    def switch_obstacle_callback(self, msg):
+        self.switch_obstacle = msg.data
         
     # Fonction qui prend l'information s'il y a un obstacle
     def stop_callback(self, msg):
@@ -73,7 +79,7 @@ class routeObstacleNode(Node):
         
     # Fonction qui est appelée à chaque fois qu'une nouvelle image est reçue
     def image_callback(self, img_msg):
-        if not self.stop_running.data:
+        if not self.stop_running.data and self.switch_obstacle:
             # conversion de l'image en OpenCV
             if self.interface == '/image_raw':
                 img = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding='bgr8')
@@ -286,14 +292,8 @@ class routeObstacleNode(Node):
             cv2.waitKey(1)
         
         else:
-            self.get_logger().warn('Obstacle devant !')
-
-    # Fonction pour arreter le robot
-    def stop_robot(self):
-        twist = Twist()
-        twist.linear.x = 0.0
-        twist.angular.z = 0.0
-        self.cmd_vel_publisher.publish(twist)
+            if self.switch_obstacle:
+                self.get_logger().warn('Obstacle devant !')
 
 def main(args=None):
     rclpy.init(args=args)
