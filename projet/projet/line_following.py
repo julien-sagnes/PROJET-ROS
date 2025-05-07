@@ -288,7 +288,8 @@ class LineFollowingNode(Node):
             cv2.waitKey(1)
         
         else:
-            self.get_logger().warn('Obstacle devant !')
+            if not self.switch_obstacle.data:
+                self.get_logger().warn('Obstacle devant !')
 
     # Fonction pour arreter le robot
     def stop_robot(self):

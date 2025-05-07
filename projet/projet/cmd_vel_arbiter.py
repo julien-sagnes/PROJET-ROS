@@ -24,6 +24,8 @@ class CmdVelArbiter(Node):
 
     def switch_obstacle_callback(self, msg):
         self.switch_obstacle = msg.data
+        if self.switch_obstacle:
+            self.get_logger().warn(f'cmd_vel_arbiter_node allumé !')
 
     def obstacle_callback(self, msg):
         self.obstacle_msg = msg

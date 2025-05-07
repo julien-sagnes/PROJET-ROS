@@ -71,6 +71,8 @@ class routeObstacleNode(Node):
 
     def switch_obstacle_callback(self, msg):
         self.switch_obstacle = msg.data
+        if self.switch_obstacle:
+            self.get_logger().warn(f'route_obstacle_node allumé !')
         
     # Fonction qui prend l'information s'il y a un obstacle
     def stop_callback(self, msg):

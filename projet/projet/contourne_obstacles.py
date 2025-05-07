@@ -23,6 +23,8 @@ class ContourneObstacles(Node):
 
     def switch_obstacle_callback(self, msg):
         self.switch_obstacle = msg.data
+        if self.switch_obstacle:
+            self.get_logger().warn(f'contourne_obstacles_node allumé !')
     
     def contourne_callback(self, msg):
         if self.switch_obstacle:
