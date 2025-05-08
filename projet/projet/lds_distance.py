@@ -24,13 +24,13 @@ class LDSDistanceNode(Node):
 
         for i, range_value in enumerate(ranges):
             angle = msg.angle_min + i * angle_increment
-            if -0.349 <= angle <= 0.349:  # ±20 deg in radians
+            if angle <= 0.35 or angle >= 5.93:  # Avant
                 front_distances.append(range_value)
-            elif 1.221 <= angle <= 1.920:  # 70 to 110 deg in radians
+            elif 1.22 <= angle <= 1.92:         # Gauche
                 left_distances.append(range_value)
-            elif 4.363 <= angle <= 5.061:  # 250 to 290 deg in radians
+            elif 4.36 <= angle <= 5.06:         # Droite
                 right_distances.append(range_value)
-            elif (2.879 <= angle <= 3.455) or (-3.455 <= angle <= -2.879):  # 160 to 200 deg in radians
+            elif 2.79 <= angle <= 3.49:         # Arrière
                 back_distances.append(range_value)
 
         front_mean = self.calculate_mean(front_distances)
