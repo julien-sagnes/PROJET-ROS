@@ -36,11 +36,12 @@ class WallFollower(Node):
         self.right_dist = 10.0
 
         # PI
-        self.kp = 2.3
-        self.ki = 0.3
+        self.kp = 1.0
+        self.ki = 0.1
         self.integral = 0.0
         self.coef = 1.0
         self.previous_time = time.time()
+        
 
         self.get_logger().info("Wall follower node started.")
 
@@ -68,11 +69,11 @@ class WallFollower(Node):
 
         # Mur perdu : avance lentement
         correction_add = 0.05
-        if abs(self.right_dist) > 10 or math.isinf(self.right_dist):
+        if abs(self.right_dist) > 0.3 or math.isinf(self.right_dist):
             self.get_logger().warn("Mur perdu !")
             twist.linear.x = self.linear_speed
             twist.angular.z = - correction_add
-        elif abs(self.left_dist) > 10 or math.isinf(self.left_dist):
+        elif abs(self.left_dist) > 0.3 or math.isinf(self.left_dist):
             self.get_logger().warn("Mur perdu !")
             twist.linear.x = self.linear_speed
             twist.angular.z = + correction_add
