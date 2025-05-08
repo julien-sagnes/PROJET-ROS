@@ -12,20 +12,13 @@ class CmdVelArbiter(Node):
         self.obstacle_msg = None
         self.line_msg = None
         self.obstacle_active = False
-        self.switch_obstacle = False
 
-        self.create_subscription(Bool, '/switch_obstacle', self.switch_obstacle_callback, 10)
         self.create_subscription(Twist, '/cmd_vel_obstacle', self.obstacle_callback, 10)
         self.create_subscription(Twist, '/cmd_vel_line', self.line_callback, 10)
         self.create_subscription(Bool, '/obstacle_active', self.obstacle_flag_callback, 10)
 
         self.timer = self.create_timer(0.05, self.publish_cmd_vel)
         self.get_logger().info(f"cmd_vel_arbiter activé")
-
-    def switch_obstacle_callback(self, msg):
-        self.switch_obstacle = msg.data
-        if self.switch_obstacle:
-            self.get_logger().warn(f'cmd_vel_arbiter_node allumé !')
 
     def obstacle_callback(self, msg):
         self.obstacle_msg = msg
@@ -37,10 +30,10 @@ class CmdVelArbiter(Node):
         self.obstacle_active = msg.data
 
     def publish_cmd_vel(self):
-        if self.obstacle_msg is not None and self.obstacle_active and self.switch_obstacle:
+        if self.obstacle_msg is not None and self.obstacle_active:
             self.cmd_pub.publish(self.obstacle_msg)
             self.get_logger().info('Obstacle détecté - priorité EVITEMENT')
-        elif self.line_msg is not None and self.switch_obstacle:
+        elif self.line_msg is not None:
             self.cmd_pub.publish(self.line_msg)
             self.get_logger().info('Suivi de ligne actif')
 

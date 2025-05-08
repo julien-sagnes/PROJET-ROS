@@ -26,11 +26,6 @@ class LineFollowingNode(Node):
         # Choix entre simulation et réel
         self.declare_parameter('interface','/image_raw') #RAJOUTER /camera/image_raw/compressed si on veut interfacer
         self.interface = self.get_parameter('interface').get_parameter_value().string_value
-        
-        # Pour gérer le passage au prochain challenge
-        self.switch_obstacle_publisher = self.create_publisher(Bool, '/switch_obstacle', 10)
-        self.switch_obstacle = Bool()
-        self.switch_obstacle.data = False
 
         # Connexion à automatic_stop
         self.stop_subscriber = self.create_subscription(Bool, 'stop_running', self.stop_callback, 10)
@@ -126,10 +121,6 @@ class LineFollowingNode(Node):
                 contours_red = [max(contours_red, key=cv2.contourArea)]
             if contours_green:
                 contours_green = [max(contours_green, key=cv2.contourArea)]
-            if contours_blue:
-                self.switch_obstacle.data = True
-                self.switch_obstacle_publisher.publish(self.switch_obstacle)
-                return
             
             # Calcul de la trajectoire
             # Si les 2 lignes sont détectées
@@ -288,8 +279,7 @@ class LineFollowingNode(Node):
             cv2.waitKey(1)
         
         else:
-            if not self.switch_obstacle.data:
-                self.get_logger().warn('Obstacle devant !')
+            self.get_logger().warn('Obstacle devant !')
 
     # Fonction pour arreter le robot
     def stop_robot(self):
