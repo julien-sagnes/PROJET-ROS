@@ -58,7 +58,7 @@ class WallFollower(Node):
             return
 
         # Mur perdu : avance lentement
-        tolerance = 0.3
+        tolerance = 0.35
         correc_add = 0.05
         if abs(self.right_dist) > tolerance or math.isinf(self.right_dist):
             self.get_logger().warn("Mur droit perdu !")
