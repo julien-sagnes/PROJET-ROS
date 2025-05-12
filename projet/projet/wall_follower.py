@@ -27,7 +27,7 @@ class WallFollower(Node):
         self.start_time = time.time()
         self.wait_time = 0.0    # Nombre de secondes avant de bouger le robot
 
-        self.declare_parameter('linear_speed', 0.05)
+        self.declare_parameter('linear_speed', 0.025)
         self.linear_speed = self.get_parameter('linear_speed').get_parameter_value().double_value
 
         # Très grandes valeurs arbitraires
@@ -36,7 +36,7 @@ class WallFollower(Node):
         self.right_dist = 10.0
 
         # PI
-        self.kp = 7.7
+        self.kp = 2.3
         self.previous_time = time.time()
 
         self.get_logger().info("Wall follower node started.")
