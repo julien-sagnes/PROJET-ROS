@@ -75,8 +75,8 @@ class GoalBall(Node):
         
 
         # Yellow mask for the ball
-        lower_yellow = np.array([22, 80, 80])
-        upper_yellow = np.array([32, 255, 255])
+        lower_yellow = np.array([27, 120, 90])
+        upper_yellow = np.array([35, 255, 180])
 
         yellow_mask = cv2.inRange(hsv, lower_yellow, upper_yellow)
 

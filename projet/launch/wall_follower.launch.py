@@ -16,6 +16,9 @@ def generate_launch_description():
         on_exit=launch.actions.Shutdown(),
         output='screen',
         emulate_tty=True,
+        parameters=[
+            {'angle_width_deg':3.0}
+        ]
     )
 
     # Active le suivi de mur

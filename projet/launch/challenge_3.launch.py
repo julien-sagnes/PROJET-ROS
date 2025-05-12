@@ -27,16 +27,6 @@ def generate_launch_description():
         }.items()
     )
 
-    # Active le lidar
-    lds_distance = Node(
-        package='projet',
-        executable='lds_distance',
-        name='lds_distance_node',
-        on_exit=launch.actions.Shutdown(),
-        output='screen',
-        emulate_tty=True,
-    )
-
     # Définir d'autres actions comme le lancement de nœuds ou de commandes spécifiques
     ld = LaunchDescription()
 
@@ -45,6 +35,5 @@ def generate_launch_description():
     ld.add_action(y_pose)
     ld.add_action(yaw_angle)
     ld.add_action(world)
-    ld.add_action(lds_distance)
 
     return ld
