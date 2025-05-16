@@ -7,14 +7,13 @@ from launch_ros.actions import Node
 import launch  # Pour Shutdown()
 
 def generate_launch_description():
-    # Active le lidar
-    line_following = Node(
-        package='projet',
-        executable='line_following',
-        name='line_following_node',
-        on_exit=launch.actions.Shutdown(),
-        output='screen',
-        emulate_tty=True,
+    # Chemin vers le fichier de lancement du monde
+    world = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(os.path.join(
+            get_package_share_directory('projet2025'),
+            'launch',
+            'projet.launch.py'
+        ))
     )
 
     # Active le lidar
@@ -41,7 +40,7 @@ def generate_launch_description():
     ld = LaunchDescription()
 
     # Ajout des actions au lancement
-    ld.add_action(line_following)
+    ld.add_action(world)
     ld.add_action(lds_distance)
     ld.add_action(automatic_stop)
 

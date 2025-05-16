@@ -9,7 +9,7 @@ class ContourneObstacles(Node):
     def __init__(self):
         super().__init__('contourne_obstacles_node')
 
-        self.declare_parameter('distance_limit', 0.25)
+        self.declare_parameter('distance_limit', 0.20)
         self.distance_limit = self.get_parameter('distance_limit').get_parameter_value().double_value
 
         self.subscriber = self.create_subscription(LaserScan, '/scan', self.contourne_callback, 10)
@@ -35,7 +35,7 @@ class ContourneObstacles(Node):
         msg_bool = Bool()
         msg_bool.data = False
         # Zone gauche : indices 1 à 50
-        for i in range(1, 50):
+        for i in range(10, 50):
             dist = distances[i]
             if 0.0 < dist < self.distance_limit:
                 gauche_detecte = True
@@ -44,9 +44,9 @@ class ContourneObstacles(Node):
                 break  # On agit dès le premier obstacle
 
         # Zone droite : indices 300 à 359
-        for i in range(310, 359):
+        for i in range(300, 350):
             dist = distances[i]
-            if 0.0 < dist < self.distance_limit:
+            if 0.0 < dist < (self.distance_limit + 0.5):
                 droite_detecte = True
                 msg_bool.data = True
                 self.get_logger().info(f"Obstacle à droite (index {i}) : {dist:.2f} m")
@@ -54,17 +54,20 @@ class ContourneObstacles(Node):
 
         # Action
         cmd = Twist()
-        if gauche_detecte:
+        
+
+
+        if gauche_detecte :
             cmd.linear.x = 0.02
-            cmd.angular.z = -0.4  # Tourne à droite
+            cmd.angular.z = -0.2  # Tourne à droite
         
             self.publisher.publish(cmd)
             self.publisher2.publish(msg_bool)
             self.get_logger().info("Contournement par la droite")
             
-        elif droite_detecte:
+        elif droite_detecte :
             cmd.linear.x = 0.02
-            cmd.angular.z = 0.4  # Tourne à gauche
+            cmd.angular.z = 0.2  # Tourne à gauche
             
             self.publisher.publish(cmd)
             self.publisher2.publish(msg_bool)

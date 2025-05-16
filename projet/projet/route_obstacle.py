@@ -22,7 +22,7 @@ class routeObstacleNode(Node):
         self.linear_scale = self.get_parameter('linear_scale').get_parameter_value().double_value
         # Choix du côté du rond-point (True : à droite, False : à gauche)
         self.passage_a_droite = Bool()
-        self.passage_a_droite = True
+        self.passage_a_droite = False
         # Choix entre simulation et réel
         self.declare_parameter('interface','/image_raw') #RAJOUTER /camera/image_raw/compressed si on veut interfacer
         self.interface = self.get_parameter('interface').get_parameter_value().string_value
@@ -167,6 +167,16 @@ class routeObstacleNode(Node):
                             twist.linear.x = 0.05 # on maintient une vitesse réduite
                             twist.angular.z = 0.5
                             self.cmd_vel_publisher.publish(twist)
+
+                        #if cx_red > 270*self.width_proportion and cx_red < 300*self.width_proportion and cy_red > 165*self.height_proportion and cy_red < 200*self.height_proportion : # virage à gauche
+#
+ #                           self.get_logger().info(f'Il faut encore tourner à gauche !  V et R')
+  #                          # Commandes de mouvement: le robot avance avec une vitesse linéaire et tourne selon l'erreur calculée (PID)
+   #                         twist = Twist()
+    #                        twist.linear.x = 0.05 # on maintient une vitesse réduite
+     #                       twist.angular.z = 0.5
+      #                      self.cmd_vel_publisher.publish(twist)
+
 
                         elif cx_green > 80*self.width_proportion and cy_green > 79*self.height_proportion and cx_red > 150*self.width_proportion and cy_red < 50*self.height_proportion :
                             self.get_logger().info(f'Il faut encore tourner à DROITE !  V et R')

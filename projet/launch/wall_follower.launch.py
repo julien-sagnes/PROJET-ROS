@@ -17,7 +17,7 @@ def generate_launch_description():
         output='screen',
         emulate_tty=True,
         parameters=[
-            {'angle_width_deg':3.0}
+            {'angle_width_deg':5.0}
         ]
     )
 

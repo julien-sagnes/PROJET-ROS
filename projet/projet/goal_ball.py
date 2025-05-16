@@ -69,14 +69,16 @@ class GoalBall(Node):
             np_arr = np.asarray(msg.data, dtype = np.uint8)
             img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
             cv2.imshow('Camera View', img)
+        
+        print (f"image = {self.interface}")
 
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         self.image_height, self.image_width, _ = img.shape
         
 
         # Yellow mask for the ball
-        lower_yellow = np.array([27, 120, 90])
-        upper_yellow = np.array([35, 255, 180])
+        lower_yellow = np.array([22, 80, 80])
+        upper_yellow = np.array([32, 255, 255])
 
         yellow_mask = cv2.inRange(hsv, lower_yellow, upper_yellow)
 

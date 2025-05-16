@@ -36,7 +36,7 @@ class WallFollower(Node):
         self.right_dist = 10.0
 
         # PI
-        self.kp = 2.3
+        self.kp = 12.5
         self.previous_time = time.time()
 
         self.get_logger().info("Wall follower node started.")

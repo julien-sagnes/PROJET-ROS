@@ -73,7 +73,7 @@ class LineFollowingNode(Node):
         
     # Fonction qui est appelée à chaque fois qu'une nouvelle image est reçue
     def image_callback(self, img_msg):
-        if not self.stop_running.data:
+        if not self.stop_running.data :
             # conversion de l'image en OpenCV
             if self.interface == '/image_raw':
                 img = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding='bgr8')
@@ -149,21 +149,21 @@ class LineFollowingNode(Node):
                     
                 
                     if cx_green < cx_red :
-                        if cx_green < 190*self.width_proportion and cy_green < 40*self.height_proportion : # virage à gauche
+                        if cx_green < 190*self.width_proportion and cy_green < 60*self.height_proportion : # virage à gauche
 
                             self.get_logger().info(f'Il faut encore tourner à gauche !  V et R')
                             # Commandes de mouvement: le robot avance avec une vitesse linéaire et tourne selon l'erreur calculée (PID)
                             twist = Twist()
-                            twist.linear.x = 0.05 # on maintient une vitesse réduite
-                            twist.angular.z = 0.5
+                            twist.linear.x = 0.04# on maintient une vitesse réduite
+                            twist.angular.z = 0.4
                             self.cmd_vel_publisher.publish(twist)
 
                         elif cx_green > 5*self.width_proportion and cy_green > 79*self.height_proportion and cx_red > 150*self.width_proportion and cy_red < 50*self.height_proportion :
                             self.get_logger().info(f'Il faut encore tourner à DROITE !  V et R')
                             # Commandes de mouvement: le robot avance avec une vitesse linéaire et tourne selon l'erreur calculée (PID)
                             twist = Twist()
-                            twist.linear.x = 0.05 # on maintient une vitesse réduite
-                            twist.angular.z = -0.5
+                            twist.linear.x = 0.04 # on maintient une vitesse réduite
+                            twist.angular.z = -0.4
                             self.cmd_vel_publisher.publish(twist)
                         
                         else :
@@ -179,23 +179,23 @@ class LineFollowingNode(Node):
                         if cy_red > 200*self.height_proportion:
                             self.get_logger().info("Il faut encore tourner à droite ! V et R")
                             twist = Twist()
-                            twist.linear.x = 0.05 # on maintient la vitesse en ligne droite
-                            twist.angular.z = -0.3
+                            twist.linear.x = 0.04 # on maintient la vitesse en ligne droite
+                            twist.angular.z = -0.4
                             self.cmd_vel_publisher.publish(twist)
 
                         if cy_green > 115*self.height_proportion :
                             if self.passage_a_droite :
                                 self.get_logger().info("JE PASSE A DROITE !!!")
                                 twist = Twist()
-                                twist.linear.x = 0.05 # on maintient la vitesse en ligne droite
-                                twist.angular.z = -0.6
+                                twist.linear.x = 0.04 # on maintient la vitesse en ligne droite
+                                twist.angular.z = -0.4
                                 self.cmd_vel_publisher.publish(twist)
                             
                             else :
                                 self.get_logger().info("JE PASSE A GAUCHE !!!")
                                 twist = Twist()
-                                twist.linear.x = 0.05 # on maintient la vitesse en ligne droite
-                                twist.angular.z = 0.5
+                                twist.linear.x = 0.04 # on maintient la vitesse en ligne droite
+                                twist.angular.z = 0.4
                                 self.cmd_vel_publisher.publish(twist)
 
             elif contours_green and not contours_red:
@@ -212,8 +212,8 @@ class LineFollowingNode(Node):
                     if cx_green > 90*self.width_proportion and cy_green > 110*self.height_proportion:  # Quand trop près de la ligne
                         self.get_logger().info(f'Tourne vers la droite VERT ONLY')
                         twist = Twist()
-                        twist.linear.x = 0.05
-                        twist.angular.z = -0.5
+                        twist.linear.x = 0.04
+                        twist.angular.z = -0.4
                         self.cmd_vel_publisher.publish(twist)
 
                     
@@ -240,17 +240,17 @@ class LineFollowingNode(Node):
 
                     
                     
-                    if cx_red < 200*self.width_proportion and cy_red > 100*self.height_proportion :
+                    if cx_red < 200*self.width_proportion and cy_red > 90*self.height_proportion :
                         self.get_logger().info(f'Il faut tourner à gauche ROUGE ONLY!!')
                         twist = Twist()
-                        twist.linear.x = 0.05
-                        twist.angular.z = 0.5
+                        twist.linear.x = 0.04
+                        twist.angular.z = 0.4
                         self.cmd_vel_publisher.publish(twist)
 
                     elif cx_red > 200 and cy_red < 200*self.height_proportion :
                         self.get_logger().info(f'OULA FAUT TOURNER ROUGE ONLY!!')
                         twist = Twist()
-                        twist.linear.x = 0.05
+                        twist.linear.x = 0.04
                         twist.angular.z = 0.0
                         self.cmd_vel_publisher.publish(twist)
                 
